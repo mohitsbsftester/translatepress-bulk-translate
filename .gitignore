@@ -1,0 +1,55 @@
+# ---------------------------------------------------------------------------
+# Site backups and database dumps.
+#
+# These contain live credentials, password hashes, customer records and email
+# addresses. Never commit them, especially to a public repository.
+# ---------------------------------------------------------------------------
+*.sql
+*.sql.gz
+*.sql.zip
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+_public_html*
+public_html*
+wp-config.php
+local/
+site/
+
+# Working files produced by the tool. Translations are client copy; reports and
+# patches embed the source strings.
+*.xlsx
+*.xlsm
+*.csv
+*.tsv
+patch*.sql
+rollback*.sql
+mt_*.sql
+report*.csv
+review*.csv
+
+# Credentials
+.env
+.env.*
+*.pem
+*.key
+secrets.json
+glossary.json
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# gstack / tooling state
+.gstack/
