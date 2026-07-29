@@ -14,6 +14,7 @@ you a `.sql` patch to import back.
 
 ## Table of contents
 
+- [Quick run](#quick-run)
 - [What this solves](#what-this-solves)
 - [How TranslatePress stores translations](#how-translatepress-stores-translations)
 - [Install](#install)
@@ -28,6 +29,130 @@ you a `.sql` patch to import back.
 - [Troubleshooting](#troubleshooting)
 - [Testing](#testing)
 - [Safety notes](#safety-notes)
+
+---
+
+## Quick run
+
+Machine-translate everything still untranslated and apply it through
+phpMyAdmin. No server shell needed — cPanel is enough.
+
+Total time is about ten minutes, and the model cost for a typical site is under
+one cent.
+
+### 1. Install (once)
+
+```bash
+git clone https://github.com/<you>/translatepress-bulk-translate.git
+cd translatepress-bulk-translate
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+```
+
+### 2. Export the dictionary table
+
+**cPanel → phpMyAdmin →** select your WordPress database → click the
+`wp_trp_dictionary_..._...` table → **Export** → Format **SQL** → **Go**.
+
+Save it as `dump.sql` inside the project folder.
+
+> Not sure which table? See
+> [Which table am I working on?](#which-table-am-i-working-on). With Arabic as
+> the default language and English as the target it is
+> `wp_trp_dictionary_ar_en_gb`.
+
+### 3. Price the job
+
+No API key needed for this step, and it writes nothing.
+
+```bash
+.venv/bin/python trp_translate.py translate --dump dump.sql --estimate-only
+```
+
+```
+532 candidate(s), 36 contain Arabic, 496 skipped as non-Arabic
+36 string(s), 5,428 chars, 4 batch(es)
+Estimated: ~3.5k in + ~2.2k out tokens = ~$0.0021
+```
+
+If the candidate count looks wrong, stop and check the table name before
+spending anything.
+
+### 4. Add your API key
+
+Create a key at [openrouter.ai](https://openrouter.ai) and add a dollar of
+credit.
+
+```bash
+export OPENROUTER_API_KEY=sk-or-...
+```
+
+### 5. Translate five strings first
+
+Never do the full run blind.
+
+```bash
+.venv/bin/python trp_translate.py translate --dump dump.sql \
+    --context "a commercial printing press in Riyadh" \
+    --limit 5 \
+    --sql-out patch-sample.sql \
+    --backup rollback.sql \
+    --report sample.csv
+```
+
+Open `sample.csv` and read the five translations. `--context` matters: it is
+the difference between stiff literal output and copy that reads like the rest
+of your site.
+
+### 6. Apply the sample
+
+**phpMyAdmin →** your database → **Import** → choose `patch-sample.sql` → **Go**.
+
+Then clear any page cache or CDN and load one of the affected pages in the
+target language (e.g. `https://yoursite.com/en/contact/`). Confirm the text
+reads correctly and the layout still holds.
+
+### 7. Translate the rest
+
+Happy with the sample? Drop `--limit` and run the remainder.
+
+```bash
+.venv/bin/python trp_translate.py translate --dump dump.sql \
+    --context "a commercial printing press in Riyadh" \
+    --sql-out patch.sql \
+    --backup rollback-full.sql \
+    --report review.csv
+```
+
+Already-translated rows are skipped, so the five from step 5 are not redone and
+nothing you translated by hand is overwritten.
+
+### 8. Apply and clear cache
+
+**phpMyAdmin → Import →** `patch.sql` → **Go**, then clear your page cache and
+CDN.
+
+The patch is wrapped in `START TRANSACTION` / `COMMIT`, so it either applies
+completely or not at all.
+
+### 9. Review in WordPress
+
+Everything written here has `status = 1` (machine translated), so it shows as
+distinct from human-reviewed strings in **TranslatePress → Translate Site**.
+Work through anything that reads awkwardly and mark it reviewed.
+
+---
+
+**If something looks wrong,** import `rollback-full.sql` through phpMyAdmin the
+same way. It restores every row in the table to its state before the patch.
+
+**Before your first real run,** take a full database backup through cPanel
+(**cPanel → Backup Wizard**). The rollback file covers this one table; a real
+backup covers everything else.
+
+**Re-export `dump.sql` before each session.** Patches target rows by `id` from
+your snapshot, so if someone edits translations in the TranslatePress editor in
+between, you would overwrite their work.
 
 ---
 
