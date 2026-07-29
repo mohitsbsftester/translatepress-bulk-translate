@@ -1493,7 +1493,26 @@ def add_source_args(parser: argparse.ArgumentParser) -> None:
     group.add_argument("--table", help="override the dictionary table name entirely")
 
 
+def use_utf8_console() -> None:
+    """
+    Force UTF-8 on the console streams.
+
+    Progress output echoes source strings, so on Windows - where the console
+    still defaults to a legacy code page - printing Arabic raises
+    UnicodeEncodeError and kills the run partway through. errors='replace'
+    means an unrepresentable glyph degrades to '?' instead of aborting.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
 def main(argv: list[str]) -> int:
+    use_utf8_console()
     parser = argparse.ArgumentParser(
         prog="trp_translate.py",
         description="Bulk import and export TranslatePress translations.",

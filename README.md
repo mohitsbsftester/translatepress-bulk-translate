@@ -42,12 +42,33 @@ one cent.
 
 ### 1. Install (once)
 
+**macOS / Linux**
+
 ```bash
 git clone https://github.com/Sajith-K-Sasi/translatepress-bulk-translate.git
 cd translatepress-bulk-translate
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
+
+**Windows (PowerShell)**
+
+```powershell
+git clone https://github.com/Sajith-K-Sasi/translatepress-bulk-translate.git
+cd translatepress-bulk-translate
+py -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+Once the environment is active your prompt shows `(.venv)`, and every command
+below works as written on both platforms. Opening a new terminal later? Re-run
+the activate line first.
+
+> **PowerShell blocks the activate script?** Run
+> `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` in that window
+> and try again, or use `.venv\Scripts\activate.bat` from `cmd.exe`.
 
 ### 2. Export the dictionary table
 
@@ -66,7 +87,7 @@ Save it as `dump.sql` inside the project folder.
 No API key needed for this step, and it writes nothing.
 
 ```bash
-.venv/bin/python trp_translate.py translate --dump dump.sql --estimate-only
+python trp_translate.py translate --dump dump.sql --estimate-only
 ```
 
 ```
@@ -83,16 +104,30 @@ spending anything.
 Create a key at [openrouter.ai](https://openrouter.ai) and add a dollar of
 credit.
 
+**macOS / Linux**
+
 ```bash
 export OPENROUTER_API_KEY=sk-or-...
 ```
+
+**Windows (PowerShell)**
+
+```powershell
+$env:OPENROUTER_API_KEY = "sk-or-..."
+```
+
+Either way this lasts for the current terminal only. Set it again in a new one.
 
 ### 5. Translate five strings first
 
 Never do the full run blind.
 
+> **On PowerShell**, the `\` at the end of each line is a Unix continuation and
+> will not work. Use a backtick `` ` `` instead, or put the whole command on
+> one line.
+
 ```bash
-.venv/bin/python trp_translate.py translate --dump dump.sql \
+python trp_translate.py translate --dump dump.sql \
     --context "a commercial printing press in Riyadh" \
     --limit 5 \
     --sql-out patch-sample.sql \
@@ -117,7 +152,7 @@ reads correctly and the layout still holds.
 Happy with the sample? Drop `--limit` and run the remainder.
 
 ```bash
-.venv/bin/python trp_translate.py translate --dump dump.sql \
+python trp_translate.py translate --dump dump.sql \
     --context "a commercial printing press in Riyadh" \
     --sql-out patch.sql \
     --backup rollback-full.sql \
@@ -227,15 +262,37 @@ translator.
 
 ## Install
 
-Requires Python 3.9+.
+Requires Python 3.9+. Works on macOS, Linux and Windows.
+
+**macOS / Linux**
 
 ```bash
 git clone https://github.com/Sajith-K-Sasi/translatepress-bulk-translate.git
 cd translatepress-bulk-translate
 
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+source .venv/bin/activate
+pip install -r requirements.txt
 ```
+
+**Windows (PowerShell)**
+
+```powershell
+git clone https://github.com/Sajith-K-Sasi/translatepress-bulk-translate.git
+cd translatepress-bulk-translate
+
+py -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+Activation is what makes every example in this README portable: with the
+environment active, plain `python trp_translate.py ...` resolves to the
+virtual environment on either platform. Your prompt shows `(.venv)` when it is
+on, and each new terminal needs the activate line again.
+
+Prefer not to activate? Call the interpreter by path instead —
+`.venv/bin/python` on macOS and Linux, `.venv\Scripts\python.exe` on Windows.
 
 | package | needed for |
 |---|---|
@@ -243,6 +300,15 @@ python3 -m venv .venv
 | `pymysql` | connecting to a live database — optional |
 
 If you only ever work from `.sql` dumps, `openpyxl` alone is enough.
+
+### Windows notes
+
+- Use **PowerShell** or **Windows Terminal**. Everything works in `cmd.exe`
+  too, but activation is `.venv\Scripts\activate.bat` there.
+- `docker-test.sh` is a bash script. It needs **WSL**, **Git Bash**, or Docker
+  Desktop's WSL backend. It is optional — the tool itself does not need it.
+- Console output includes source-language text. The tool forces UTF-8 on its
+  own output, so Arabic renders rather than crashing on legacy code pages.
 
 ---
 
@@ -299,7 +365,7 @@ Or read the credentials straight out of a local copy of `wp-config.php`:
 ### 1. Export what still needs translating
 
 ```bash
-.venv/bin/python trp_translate.py export --dump dump.sql --out todo.xlsx
+python trp_translate.py export --dump dump.sql --out todo.xlsx
 ```
 
 You get a formatted spreadsheet, right-to-left aligned where appropriate:
@@ -320,7 +386,7 @@ Give `todo.xlsx` to your translator. One rule:
 ### 3. Preview the import
 
 ```bash
-.venv/bin/python trp_translate.py import --excel todo.xlsx --dump dump.sql \
+python trp_translate.py import --excel todo.xlsx --dump dump.sql \
     --report review.csv
 ```
 
@@ -365,13 +431,17 @@ costs well under one cent.
 Sign up at [openrouter.ai](https://openrouter.ai), create a key, top up a dollar.
 
 ```bash
-export OPENROUTER_API_KEY=sk-or-...
+export OPENROUTER_API_KEY=sk-or-...          # macOS / Linux
+```
+
+```powershell
+$env:OPENROUTER_API_KEY = "sk-or-..."        # Windows PowerShell
 ```
 
 ### 2. Price the job first — no key required
 
 ```bash
-.venv/bin/python trp_translate.py translate --dump dump.sql --estimate-only
+python trp_translate.py translate --dump dump.sql --estimate-only
 ```
 
 ```
@@ -388,7 +458,7 @@ Estimated: ~3.5k in + ~2.2k out tokens = ~$0.0021
 ### 3. Do a small run and read the output
 
 ```bash
-.venv/bin/python trp_translate.py translate --dump dump.sql \
+python trp_translate.py translate --dump dump.sql \
     --limit 5 --report sample.csv --sql-out sample-patch.sql
 ```
 
@@ -397,7 +467,7 @@ Read `sample.csv` before trusting the rest.
 ### 4. Translate the remainder
 
 ```bash
-.venv/bin/python trp_translate.py translate --dump dump.sql \
+python trp_translate.py translate --dump dump.sql \
     --context "a commercial printing press in Riyadh" \
     --glossary glossary.json \
     --sql-out patch.sql --backup rollback.sql --report review.csv
