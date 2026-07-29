@@ -43,7 +43,7 @@ one cent.
 ### 1. Install (once)
 
 ```bash
-git clone https://github.com/<you>/translatepress-bulk-translate.git
+git clone https://github.com/Sajith-K-Sasi/translatepress-bulk-translate.git
 cd translatepress-bulk-translate
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
@@ -204,6 +204,25 @@ That is why the workflow is **export first, then fill in**. Round-tripping an
 export guarantees every row matches. Writing a spreadsheet from scratch works
 too, but expect some rows to land in the "unmatched" report.
 
+### What status gets written
+
+`status` is how TranslatePress tells reviewed copy from unreviewed. Each
+command defaults to the value that matches where the text came from:
+
+| command | default `status` | why |
+|---|---|---|
+| `import` | **`2`** human reviewed | the text came from a person — a translator filled in the spreadsheet |
+| `translate` | **`1`** machine translated | the text came from a model and nobody has read it yet |
+
+That difference is the point. Machine output stays visually distinct in
+**TranslatePress → Translate Site**, so you can see at a glance what still
+needs a human pass. Once you have reviewed a string there, TranslatePress
+promotes it to `2` itself.
+
+Override on either command with `--status N` — for example `--status 1` on an
+`import` whose spreadsheet was filled by Google Translate rather than a
+translator.
+
 ---
 
 ## Install
@@ -211,8 +230,8 @@ too, but expect some rows to land in the "unmatched" report.
 Requires Python 3.9+.
 
 ```bash
-git clone https://github.com/<you>/trp-translate.git
-cd trp-translate
+git clone https://github.com/Sajith-K-Sasi/translatepress-bulk-translate.git
+cd translatepress-bulk-translate
 
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
@@ -494,7 +513,7 @@ when you cannot reach the database directly.
 --excel FILE             .xlsx, .csv or .tsv                     [required]
 --sheet NAME             worksheet name (default: first)
 --arabic-col / --english-col    column by header, number or letter
---status N               status to write (default: 2, human reviewed)
+--status N               status to write (default: 2, human reviewed | see "What status gets written")
 --max-tier N             loosest match tier, 0-3 (default: 2)
 --skip-translated        never touch rows that already have a translation
 --report FILE            per-row CSV report
@@ -516,7 +535,7 @@ actually in. Override when in doubt: `--arabic-col B --english-col C`.
 --batch-size N           strings per request (default: 25)
 --limit N                translate at most N strings
 --retranslate            include rows that already have a translation
---status N               status to write (default: 1, machine translated)
+--status N               status to write (default: 1, machine translated | see "What status gets written")
 --price-in / --price-out dollars per 1M tokens, for the estimate
 --max-cost N             abort if the estimate exceeds this (default: 5.00)
 --estimate-only          price the job and exit
