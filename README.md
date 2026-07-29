@@ -40,6 +40,23 @@ phpMyAdmin. No server shell needed — cPanel is enough.
 Total time is about ten minutes, and the model cost for a typical site is under
 one cent.
 
+> ### Windows users, read this first
+>
+> Commands here are given twice — a **bash** block for macOS and Linux, and a
+> **PowerShell** block for Windows. Copy the one for your system.
+>
+> They differ only in how a command is split across lines. bash uses a
+> backslash `\`, PowerShell uses a backtick `` ` ``. Copying the bash version
+> into PowerShell produces:
+>
+> ```
+> Missing expression after unary operator '--'.
+> ```
+>
+> because PowerShell ignores the `\`, reads the next line on its own, and tries
+> to interpret the leading `--` as a decrement. If you see that error, you
+> copied the wrong block.
+
 ### 1. Install (once)
 
 **macOS / Linux**
@@ -122,9 +139,7 @@ Either way this lasts for the current terminal only. Set it again in a new one.
 
 Never do the full run blind.
 
-> **On PowerShell**, the `\` at the end of each line is a Unix continuation and
-> will not work. Use a backtick `` ` `` instead, or put the whole command on
-> one line.
+**macOS / Linux**
 
 ```bash
 python trp_translate.py translate --dump dump.sql \
@@ -132,6 +147,17 @@ python trp_translate.py translate --dump dump.sql \
     --limit 5 \
     --sql-out patch-sample.sql \
     --backup rollback.sql \
+    --report sample.csv
+```
+
+**Windows (PowerShell)**
+
+```powershell
+python trp_translate.py translate --dump dump.sql `
+    --context "a commercial printing press in Riyadh" `
+    --limit 5 `
+    --sql-out patch-sample.sql `
+    --backup rollback.sql `
     --report sample.csv
 ```
 
@@ -151,11 +177,23 @@ reads correctly and the layout still holds.
 
 Happy with the sample? Drop `--limit` and run the remainder.
 
+**macOS / Linux**
+
 ```bash
 python trp_translate.py translate --dump dump.sql \
     --context "a commercial printing press in Riyadh" \
     --sql-out patch.sql \
     --backup rollback-full.sql \
+    --report review.csv
+```
+
+**Windows (PowerShell)**
+
+```powershell
+python trp_translate.py translate --dump dump.sql `
+    --context "a commercial printing press in Riyadh" `
+    --sql-out patch.sql `
+    --backup rollback-full.sql `
     --report review.csv
 ```
 
@@ -386,8 +424,7 @@ Give `todo.xlsx` to your translator. One rule:
 ### 3. Preview the import
 
 ```bash
-python trp_translate.py import --excel todo.xlsx --dump dump.sql \
-    --report review.csv
+python trp_translate.py import --excel todo.xlsx --dump dump.sql --report review.csv
 ```
 
 Nothing is written. You get a summary:
@@ -458,18 +495,28 @@ Estimated: ~3.5k in + ~2.2k out tokens = ~$0.0021
 ### 3. Do a small run and read the output
 
 ```bash
-python trp_translate.py translate --dump dump.sql \
-    --limit 5 --report sample.csv --sql-out sample-patch.sql
+python trp_translate.py translate --dump dump.sql --limit 5 --report sample.csv --sql-out sample-patch.sql
 ```
 
 Read `sample.csv` before trusting the rest.
 
 ### 4. Translate the remainder
 
+**macOS / Linux**
+
 ```bash
 python trp_translate.py translate --dump dump.sql \
     --context "a commercial printing press in Riyadh" \
     --glossary glossary.json \
+    --sql-out patch.sql --backup rollback.sql --report review.csv
+```
+
+**Windows (PowerShell)**
+
+```powershell
+python trp_translate.py translate --dump dump.sql `
+    --context "a commercial printing press in Riyadh" `
+    --glossary glossary.json `
     --sql-out patch.sql --backup rollback.sql --report review.csv
 ```
 
@@ -654,6 +701,30 @@ default language. Confirm `status` is not `0`.
 A charset problem in phpMyAdmin. The generated patches declare `SET NAMES
 utf8mb4` — if you hand-edited the file, keep that line, and make sure it is
 saved as UTF-8.
+
+**PowerShell: `Missing expression after unary operator '--'`.**
+You copied a bash command into PowerShell. The two shells split a long command
+across lines differently — bash uses a trailing backslash `\`, PowerShell uses
+a trailing backtick `` ` ``. PowerShell ignores the `\`, reads the next line on
+its own, sees a leading `--` and tries to interpret it as a decrement.
+
+Use the **Windows (PowerShell)** block instead of the **macOS / Linux** one.
+Or put the whole command on a single line, which works in every shell:
+
+```powershell
+python trp_translate.py translate --dump dump.sql --limit 5 --sql-out patch-sample.sql --backup rollback.sql --report sample.csv
+```
+
+**PowerShell: `running scripts is disabled on this system`.**
+The execution policy is blocking `Activate.ps1`. In that window run
+`Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`, then activate
+again. It applies to that terminal only.
+
+**Windows: `python` is not recognised.**
+Either the virtual environment is not active — re-run
+`.venv\Scripts\Activate.ps1` and look for `(.venv)` in your prompt — or Python
+is not on PATH. Try `py` instead of `python`, or reinstall Python with "Add
+python.exe to PATH" ticked.
 
 **`--apply` refuses to run.**
 It needs a live connection. With `--dump` you must use `--sql-out`.
