@@ -40,6 +40,10 @@ and every command defaults to a dry run.
     # Machine-translate what is still empty, via OpenRouter
     ./trp_translate.py translate --dump dump.sql --sql-out patch.sql
 
+    # Same, but recover the wording from the English the Arabic came from
+    ./trp_translate.py translate --dump dump.sql --reference blog-en.md \
+        --sql-out patch.sql
+
     # Generate SQL to run through phpMyAdmin, plus its rollback
     ./trp_translate.py import --excel todo.xlsx --dump dump.sql \
         --sql-out patch.sql --backup rollback.sql
@@ -524,6 +528,38 @@ do not add words that are not in the source.
 - Preserve leading and trailing whitespace exactly as given.
 """
 
+# Appended when --reference is given.
+#
+# The framing matters. When the Arabic on the site was itself produced from an
+# English source document, translating it back is wording *recovery*, not
+# translation - the right answer is already written down, and a fresh
+# translation is a worse answer that merely looks fine. Saying so plainly beats
+# a vague "here is some reference copy".
+#
+# The instruction still has to push both ways, because a model told to reuse
+# wording will answer a short button label with whatever nearby sentence it
+# found. Something in a long document is always vaguely similar.
+REFERENCE_PROMPT = """
+The Arabic you are translating was produced from the English document below. \
+For most strings the exact original English wording is already present in it. \
+Your job is to recover that wording, not to write a new translation.
+
+- If the source string corresponds to a passage in the document - a heading, \
+sentence, list item, button label, or a fragment of one - return that English \
+wording verbatim: same words, capitalisation, punctuation and spelling.
+- If it genuinely does not appear, translate it fresh, matching the document's \
+terminology, tone and register.
+- Never return document text that does not correspond to the source string. An \
+honest translation beats the wrong approved phrase. When torn, translate.
+- The rules above still apply. The document carries no HTML, so keep the source \
+string's own tags, entities, placeholders and surrounding whitespace, and fit \
+the recovered wording inside them.
+
+--- BEGIN ENGLISH SOURCE DOCUMENT ---
+{reference}
+--- END ENGLISH SOURCE DOCUMENT ---
+"""
+
 
 class TranslationError(RuntimeError):
     pass
@@ -540,13 +576,14 @@ class OpenRouterTranslator:
     """
 
     def __init__(self, api_key, model=DEFAULT_MODEL, context="a business website",
-                 glossary=None, timeout=180, retries=3):
+                 glossary=None, timeout=180, retries=3, reference=""):
         self.api_key = api_key
         self.model = model
         self.context = context
         self.glossary = glossary or {}
         self.timeout = timeout
         self.retries = retries
+        self.reference = reference or ""
         self.prompt_tokens = 0
         self.completion_tokens = 0
 
@@ -557,6 +594,11 @@ class OpenRouterTranslator:
             prompt += (
                 "\nUse these fixed translations wherever the term appears:\n" + terms + "\n"
             )
+        # Last, and byte-identical on every batch. Providers that cache prompt
+        # prefixes only do so while the prefix does not move, and the reference
+        # is by far the largest thing being resent.
+        if self.reference:
+            prompt += REFERENCE_PROMPT.format(reference=self.reference)
         return prompt
 
     def _post(self, payload: dict) -> dict:
@@ -657,6 +699,79 @@ def looks_translatable(text: str) -> bool:
 
 def strip_tags(text: str) -> str:
     return re.sub(r"<[^>]+>", " ", text)
+
+
+# Deciding whether an answer was recovered from the reference or written fresh.
+#
+# Shared word n-grams, not a substring test. WordPress hands out excerpts
+# truncated with a trailing "[&#8230;]", and the reference contains no such
+# marker - so one trailing ellipsis, one stray comma, or a prefix picked up from
+# the source ("Footer text: ") is enough to make an otherwise verbatim answer
+# fail `in`. On a real 36-string run a substring test found 11 of 17 genuine
+# recoveries; this finds all 17, and runs ~3000x faster than difflib on a large
+# document.
+#
+# Answers shorter than the window score 0 by construction, which is the wanted
+# behaviour: "Digital" turning up somewhere in a 4KB document is not evidence
+# that anything was recovered from it.
+REFERENCE_NGRAM = 5
+REFERENCE_MIN_COVERAGE = 0.8
+
+
+def word_ngrams(text: str, n: int = REFERENCE_NGRAM) -> set[str]:
+    words = text.split()
+    if len(words) < n:
+        return set()
+    return {" ".join(words[i : i + n]) for i in range(len(words) - n + 1)}
+
+
+def reference_coverage(answer: str, ref_grams: set[str]) -> float:
+    """Fraction of an answer's word n-grams that also appear in the reference."""
+    grams = word_ngrams(norm_tiers(answer)[2].casefold())
+    if not grams or not ref_grams:
+        return 0.0
+    return len(grams & ref_grams) / len(grams)
+
+
+def load_reference(paths: list[str]) -> str:
+    """
+    Read one or more plain-text reference documents into a single string.
+
+    Only text formats are accepted. A .docx or .pdf read as bytes turns into
+    zip/binary noise that quietly poisons the prompt and costs real tokens to
+    send, so those are rejected with instructions rather than mangled.
+    """
+    parts = []
+    for path in paths:
+        with open(path, "rb") as handle:
+            raw = handle.read()
+
+        if raw[:2] == b"PK":
+            raise SystemExit(
+                f"error: {path} looks like a .docx/.odt (zip archive), not text.\n"
+                f"       Export it as .txt or .md first - in Word, "
+                f"Save As -> Plain Text."
+            )
+        if raw[:5] == b"%PDF-":
+            raise SystemExit(
+                f"error: {path} is a PDF, not text.\n"
+                f"       Export or copy it out as .txt or .md first."
+            )
+        if b"\x00" in raw[:8192]:
+            raise SystemExit(f"error: {path} appears to be binary, not text.")
+
+        text = raw.decode("utf-8-sig", errors="replace").strip()
+        if not text:
+            raise SystemExit(f"error: {path} is empty.")
+
+        # Label each document so the model can tell them apart when several are
+        # passed, and so a stray file shows up in the prompt as itself.
+        if len(paths) > 1:
+            parts.append(f"## {os.path.basename(path)}\n\n{text}")
+        else:
+            parts.append(text)
+
+    return "\n\n".join(parts)
 
 
 def read_wp_config(path: str) -> dict:
@@ -1301,6 +1416,14 @@ def cmd_translate(args) -> int:
             glossary = json.load(handle)
         sys.stderr.write(f"Glossary: {len(glossary)} fixed term(s)\n")
 
+    reference = ""
+    if args.reference:
+        reference = load_reference(args.reference)
+        sys.stderr.write(
+            f"Reference: {len(args.reference)} document(s), "
+            f"{len(reference):,} chars\n"
+        )
+
     sys.stderr.write(f"Reading `{table}`\n")
     dictionary = source.dictionary(table)
     sys.stderr.write(f"  {len(dictionary)} row(s)\n")
@@ -1329,15 +1452,29 @@ def cmd_translate(args) -> int:
     # Arabic runs ~2.5 chars/token; add the system prompt once per batch and
     # assume output is roughly the size of input.
     batches = (len(candidates) + args.batch_size - 1) // args.batch_size
-    est_in = chars / 2.5 + batches * 320
+    # The reference sits in the system prompt, so it is resent with every batch.
+    # English runs ~4 chars/token.
+    ref_tokens = len(reference) / 4
+    est_in = chars / 2.5 + batches * (320 + ref_tokens)
     est_out = chars / 2.5
     est_cost = (est_in * args.price_in + est_out * args.price_out) / 1e6
     sys.stderr.write(
         f"\n{len(candidates)} string(s), {chars:,} chars, {batches} batch(es)\n"
         f"Model: {args.model}\n"
         f"Estimated: ~{est_in/1000:.1f}k in + ~{est_out/1000:.1f}k out tokens "
-        f"= ~${est_cost:.4f}\n\n"
+        f"= ~${est_cost:.4f}\n"
     )
+    if ref_tokens:
+        ref_share = batches * ref_tokens / est_in
+        sys.stderr.write(
+            f"  the reference is ~{ref_tokens/1000:.1f}k tokens resent on each of "
+            f"{batches} batch(es) - {ref_share:.0%} of input\n"
+        )
+        if ref_share > 0.5 and batches > 1:
+            sys.stderr.write(
+                "  raise --batch-size to send it fewer times\n"
+            )
+    sys.stderr.write("\n")
 
     if args.estimate_only:
         source.close()
@@ -1349,7 +1486,7 @@ def cmd_translate(args) -> int:
         )
 
     translator = OpenRouterTranslator(
-        api_key, args.model, args.context, glossary, args.timeout
+        api_key, args.model, args.context, glossary, args.timeout, reference=reference
     )
 
     results: dict[int, str] = {}
@@ -1394,15 +1531,36 @@ def cmd_translate(args) -> int:
         if len(failures) > 5:
             sys.stderr.write(f"  ... and {len(failures) - 5} more\n")
 
+    # Which answers were lifted from the reference and which were written fresh.
+    # Measured here rather than asked of the model: it costs nothing, cannot be
+    # fibbed about, and keeps the response contract a flat {id: string} - the
+    # thing that makes a dropped id detectable in the first place.
+    in_reference: dict[int, bool] = {}
+    if reference:
+        ref_grams = word_ngrams(norm_tiers(reference)[2].casefold())
+        for rid, english in results.items():
+            in_reference[rid] = (
+                reference_coverage(english, ref_grams) >= REFERENCE_MIN_COVERAGE
+            )
+        hits = sum(in_reference.values())
+        sys.stderr.write(
+            f"Reference: {hits}/{len(results)} answer(s) found verbatim in the "
+            f"document, {len(results) - hits} translated fresh\n"
+        )
+
     by_id = {r.id: r for r in candidates}
     if args.report:
         with open(args.report, "w", encoding="utf-8-sig", newline="") as handle:
             writer = csv.writer(handle)
-            writer.writerow(["id", "arabic", "english", "previous"])
+            header = ["id", "arabic", "english", "previous"]
+            if reference:
+                header.append("in_reference")
+            writer.writerow(header)
             for rid, english in sorted(results.items()):
-                writer.writerow(
-                    [rid, by_id[rid].original, english, by_id[rid].translated or ""]
-                )
+                row = [rid, by_id[rid].original, english, by_id[rid].translated or ""]
+                if reference:
+                    row.append("yes" if in_reference[rid] else "no")
+                writer.writerow(row)
         sys.stderr.write(f"Report written to {args.report}\n")
 
     if not results:
@@ -1601,6 +1759,16 @@ def main(argv: list[str]) -> int:
     )
     translator.add_argument(
         "--glossary", help="JSON file of {arabic: english} terms to pin"
+    )
+    translator.add_argument(
+        "--reference",
+        action="append",
+        metavar="FILE",
+        help=(
+            "plain-text .txt/.md of the English the Arabic was written from. "
+            "The model recovers wording from it instead of back-translating. "
+            "Repeatable"
+        ),
     )
     translator.add_argument(
         "--batch-size", type=int, default=25, help="strings per request (default: 25)"

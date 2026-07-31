@@ -109,8 +109,8 @@ python trp_translate.py translate --dump dump.sql --estimate-only
 
 ```
 532 candidate(s), 36 contain Arabic, 496 skipped as non-Arabic
-36 string(s), 5,428 chars, 4 batch(es)
-Estimated: ~3.5k in + ~2.2k out tokens = ~$0.0021
+36 string(s), 5,428 chars, 2 batch(es)
+Estimated: ~2.8k in + ~2.2k out tokens = ~$0.0020
 ```
 
 If the candidate count looks wrong, stop and check the table name before
@@ -483,8 +483,8 @@ python trp_translate.py translate --dump dump.sql --estimate-only
 
 ```
 532 candidate(s), 36 contain Arabic, 496 skipped as non-Arabic
-36 string(s), 5,428 chars, 4 batch(es)
-Estimated: ~3.5k in + ~2.2k out tokens = ~$0.0021
+36 string(s), 5,428 chars, 2 batch(es)
+Estimated: ~2.8k in + ~2.2k out tokens = ~$0.0020
 ```
 
 > **Why so many are skipped:** only strings actually containing source-language
@@ -529,6 +529,70 @@ want translated consistently:
   "الطباعة الأوفست": "offset printing"
 }
 ```
+
+### Recovering English you already have
+
+If the Arabic on the site was itself written from an English source — a blog
+post, a brochure, approved marketing copy — then translating it back is
+recovery, not translation. The right answer is already written down. Hand that
+document over with `--reference`:
+
+**macOS / Linux**
+
+```bash
+python trp_translate.py translate --dump dump.sql \
+    --reference blog-en.md \
+    --report review.csv --sql-out patch.sql
+```
+
+**Windows (PowerShell)**
+
+```powershell
+python trp_translate.py translate --dump dump.sql `
+    --reference blog-en.md `
+    --report review.csv --sql-out patch.sql
+```
+
+Without it, back-translation quietly loses the phrasing you paid for: "Request a
+Quote" returns as "Ask for a price offer" — accurate, and not your copy. With
+the document in the prompt, strings that appear in it come back verbatim.
+
+Plain text only, `.txt` or `.md`. A `.docx` or `.pdf` is rejected with
+instructions rather than sent as binary noise — export it as plain text first.
+Repeat the flag for several documents:
+
+```bash
+--reference about.md --reference services.md
+```
+
+The run reports how much was recovered rather than invented, and `--report`
+gains an `in_reference` column saying so per row:
+
+```
+Reference: 1 document(s), 3,994 chars
+Reference: 17/36 answer(s) found verbatim in the document, 19 translated fresh
+```
+
+Read those 19. They are the strings your document does not cover.
+
+A row counts as recovered when at least 80% of its five-word sequences also
+appear in the document. That tolerance is deliberate: WordPress serves post
+excerpts truncated with a trailing `[&#8230;]`, and a strict comparison would
+report a perfectly recovered paragraph as "fresh" over one ellipsis or one stray
+comma. Answers shorter than five words always report `no` — a common phrase
+turning up somewhere in a long document is not evidence of anything.
+
+> **Cost.** The reference lives in the system prompt, so it is resent with every
+> batch. The estimate accounts for it and shows the share:
+>
+> ```
+>   the reference is ~9.8k tokens resent on each of 2 batch(es) - 87% of input
+>   raise --batch-size to send it fewer times
+> ```
+>
+> A larger `--batch-size` sends it fewer times. On a 39KB reference, moving from
+> the default 25 to `--batch-size 50` fit the job into one batch and cut input
+> from ~22.3k to ~12.2k tokens.
 
 Results are written with `status = 1` (machine translated), so they stay
 visually distinct from human-reviewed strings in the TranslatePress editor.
@@ -649,6 +713,9 @@ actually in. Override when in doubt: `--arabic-col B --english-col C`.
 --model ID               default: google/gemini-3.1-flash-lite
 --context TEXT           one-line description of the site
 --glossary FILE          JSON of {source: target} terms to pin
+--reference FILE         .txt/.md the source text was written from; the model
+                         recovers wording from it instead of back-translating.
+                         Repeatable
 --batch-size N           strings per request (default: 25)
 --limit N                translate at most N strings
 --retranslate            include rows that already have a translation
