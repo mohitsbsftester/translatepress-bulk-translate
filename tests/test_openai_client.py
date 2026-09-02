@@ -10,6 +10,7 @@ from trp_tool.openai_client import (
     TranslationBatch,
     TranslationError,
     TranslationItem,
+    build_instructions,
     output_token_limit,
 )
 
@@ -102,6 +103,12 @@ class OpenAIClientTests(unittest.TestCase):
                 for call in translator.client.responses.calls
             )
         )
+
+    def test_german_instructions_require_consistent_formal_address(self):
+        german = build_instructions("English", "German", "SureCookie", {}, [])
+        french = build_instructions("English", "French", "SureCookie", {}, [])
+        self.assertIn("formal German Sie/Ihr", german)
+        self.assertNotIn("formal German Sie/Ihr", french)
 
 
 if __name__ == "__main__":

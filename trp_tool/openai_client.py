@@ -58,6 +58,12 @@ def build_instructions(
         "Preserve every HTML tag and attribute, HTML entity, shortcode, placeholder, template variable, URL, email, phone number, code token, file path, and leading or trailing whitespace exactly.",
         "Return one translation for every row_id and no other rows. Do not rely on input order.",
     ]
+    if target_language.casefold().startswith("german") or (
+        target_language.casefold() == "deutsch"
+    ):
+        lines.append(
+            "Address users consistently with formal German Sie/Ihr forms; do not switch to informal du/dein forms."
+        )
     if glossary:
         lines.append(
             "Terminology guidance, applied grammatically rather than by naive replacement: "

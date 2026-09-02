@@ -44,6 +44,8 @@ The export and import paths similarly expose Arabic and English column names and
 
 → `OpenAITranslator.translate_batch()` sends stable row IDs through the official OpenAI Responses API and Pydantic strict Structured Outputs
 
+→ `build_instructions()` adds consistent formal `Sie`/`Ihr` address only for the German target profile
+
 → exact ID-set checks reject missing, duplicate, unexpected, empty, or malformed output
 
 → an error remaining after bounded retries records the failed batch, marks later rows unattempted, and stops all later API requests

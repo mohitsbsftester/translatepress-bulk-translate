@@ -50,6 +50,7 @@ The included defaults are optimized for SureCookie:
 - Model: `gpt-5.6-luna`
 - Reasoning effort: `none`
 - Context: SureCookie as a WordPress cookie consent and privacy product
+- German user address: consistent formal `Sie`/`Ihr`
 - Glossary: `glossary.de.json`
 - Protected names: `protected-names.json`
 

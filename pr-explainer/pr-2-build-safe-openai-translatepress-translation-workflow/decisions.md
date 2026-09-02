@@ -46,6 +46,8 @@ SQL statements are split with quote, backtick, and comment awareness before INSE
 
 The limited run selects available HTML, embedded placeholders, privacy or consent text, CTA copy, entities, questions, very short UI text, long text, medium paragraphs, documentation text, and evenly spaced rows. Standalone `%title`-style tokens are protected and skipped.
 
+The SureCookie German profile explicitly uses formal `Sie`/`Ihr` address. The first live sample otherwise mixed formal copy with one informal `dein/verbinde` result. Consistent formal address better fits a German B2B privacy and WordPress product while remaining a narrowly target-specific instruction that does not affect later French, Spanish, Italian, Dutch, or Polish runs.
+
 ## Batch API
 
 GPT-5.6 Luna supports Batch API, but V1 keeps ordinary Responses API requests for immediate sample review and simpler failure handling. Batch submission is deferred until the synchronous workflow is proven and must retain identical ID, validation, reporting, and cost safeguards.
