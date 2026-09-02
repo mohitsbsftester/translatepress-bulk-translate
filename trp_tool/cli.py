@@ -27,6 +27,7 @@ from .openai_client import (
     TranslationError,
     Usage,
     build_instructions,
+    output_token_limit,
 )
 from .reports import write_review
 from .spreadsheet import export_dictionary, load_sheet, match_sheet
@@ -597,12 +598,13 @@ def cmd_translate(args) -> int:
         for start in range(0, len(selected), args.batch_size):
             chunk = selected[start : start + args.batch_size]
             batch_number = start // args.batch_size + 1
-            batch_input, batch_output, _ = estimate_tokens(
+            batch_input, _batch_output, _ = estimate_tokens(
                 chunk, args.batch_size, instructions
             )
             conservative_next = estimated_cost(
                 batch_input * args.retries,
-                batch_output * args.retries,
+                output_token_limit([(str(row.id), row.original) for row in chunk])
+                * args.retries,
                 args.price_input,
                 args.price_output,
             )
@@ -658,12 +660,13 @@ def cmd_translate(args) -> int:
                         "The previous translation failed protected-content validation. Correct every listed issue while translating the human-readable text: "
                         + "; ".join(validation.failures)
                     )
-                    retry_input, retry_output, _ = estimate_tokens(
+                    retry_input, _retry_output, _ = estimate_tokens(
                         [row], 1, instructions + correction
                     )
                     retry_cost = estimated_cost(
                         retry_input * args.retries,
-                        retry_output * args.retries,
+                        output_token_limit([(str(row.id), row.original)])
+                        * args.retries,
                         args.price_input,
                         args.price_output,
                     )

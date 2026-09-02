@@ -10,6 +10,7 @@ from trp_tool.openai_client import (
     TranslationBatch,
     TranslationError,
     TranslationItem,
+    output_token_limit,
 )
 
 
@@ -68,6 +69,10 @@ class OpenAIClientTests(unittest.TestCase):
         self.assertEqual(call["model"], DEFAULT_MODEL)
         self.assertEqual(call["reasoning"], {"effort": DEFAULT_REASONING_EFFORT})
         self.assertIs(call["text_format"], TranslationBatch)
+        self.assertEqual(
+            call["max_output_tokens"],
+            output_token_limit([("1", "One"), ("2", "Two")]),
+        )
         self.assertFalse(call["store"])
         self.assertEqual(translator.usage.input_tokens, 100)
         self.assertEqual(translator.usage.cached_input_tokens, 20)

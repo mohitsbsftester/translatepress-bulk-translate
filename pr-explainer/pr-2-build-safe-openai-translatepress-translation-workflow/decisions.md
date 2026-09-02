@@ -28,6 +28,8 @@ The official SDK already retries connection failures, timeouts, HTTP 408, 409, 4
 
 `translate` performs only inspection and estimation unless `--execute` is supplied. An unlimited run additionally requires `--approve-full`. This makes a paid sample explicit and prevents a complete site run before human review.
 
+Every API request also receives a conservative `max_output_tokens` ceiling derived from that batch's source characters and row count. The pre-request hard-cost check uses this ceiling across semantic retries, while normal displayed estimates continue to show expected usage. This limits anomalously verbose structured output from exceeding the approved spend.
+
 ## Protected-content validation
 
 Eligibility filtering avoids spending tokens on standalone URLs, emails, phones, paths, slugs, dates, code, placeholders, shortcodes, and protected names. Returned translations must preserve exact HTML tags and attributes, entities, printf and template placeholders, shortcodes, URLs, emails, phones, paths, code spans, CSS selectors, JSON keys, protected brands, boundary whitespace, and newline counts. Invalid rows remain in the review report but are excluded from SQL.

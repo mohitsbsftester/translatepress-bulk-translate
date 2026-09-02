@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 
 from pydantic import BaseModel, ConfigDict
@@ -67,6 +68,12 @@ def build_instructions(
             "Never translate or alter these names: " + ", ".join(protected_names)
         )
     return "\n".join(lines)
+
+
+def output_token_limit(items: list[tuple[str, str]]) -> int:
+    """Conservative output ceiling for translations plus structured JSON."""
+    source_characters = sum(len(text) for _row_id, text in items)
+    return max(256, math.ceil(source_characters / 2.2 + len(items) * 40))
 
 
 class OpenAITranslator:
@@ -146,6 +153,7 @@ class OpenAITranslator:
                     input=json.dumps(
                         payload, ensure_ascii=False, separators=(",", ":")
                     ),
+                    max_output_tokens=output_token_limit(items),
                     text_format=TranslationBatch,
                     store=False,
                     prompt_cache_key="translatepress-bulk-translate-v1",

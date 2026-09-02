@@ -38,6 +38,8 @@ The export and import paths similarly expose Arabic and English column names and
 
 → `--execute` authorizes a paid sample; unlimited execution also requires `--approve-full`
 
+→ the hard-cost guard reserves the batch's capped maximum output across retries before each request
+
 → `OpenAITranslator.translate_batch()` sends stable row IDs through the official OpenAI Responses API and Pydantic strict Structured Outputs
 
 → exact ID-set checks reject missing, duplicate, unexpected, empty, or malformed output
