@@ -34,6 +34,8 @@ Every API request also receives a conservative `max_output_tokens` ceiling deriv
 
 Eligibility filtering avoids spending tokens on standalone URLs, emails, phones, paths, slugs, dates, code, placeholders, shortcodes, and protected names. Returned translations must preserve exact HTML tags and attributes, entities, printf and template placeholders, shortcodes, URLs, emails, phones, paths, code spans, CSS selectors, JSON keys, protected brands, boundary whitespace, and newline counts. Invalid rows remain in the review report but are excluded from SQL.
 
+English apostrophe entities receive a user-approved grammatical exception. The validator decodes each entity and examines its position in the source token. It relaxes recognized contraction suffixes, singular possessives, and conservatively detected plural possessives, then records a review warning. It does not globally whitelist apostrophe entities: standalone quotation, immediately quoted words, `O’Reilly`-style names, and every non-apostrophe entity stay exact. This avoids rejecting natural German solely because English contraction or possessive grammar disappeared, without weakening formatting or technical-token protection.
+
 ## Snapshot-safe patch and rollback
 
 Each patch statement matches the row ID, exact source, previous translation including NULL, and previous status. Rollback performs the inverse check against the generated translation and machine status. A stale live row therefore produces zero affected rows instead of overwriting newer work. The generated SQL emits `ROW_COUNT()` after each guarded update for phpMyAdmin review.

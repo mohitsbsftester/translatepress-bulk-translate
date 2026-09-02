@@ -175,6 +175,8 @@ The content validator compares source and target for:
 - leading/trailing whitespace and newline counts
 - utf8mb4 text including `ä`, `ö`, `ü`, `Ä`, `Ö`, `Ü`, and `ß`
 
+English apostrophe entities are the narrow exception. The validator decodes and relaxes them only when their position and suffix identify an English contraction or possessive whose German translation no longer needs the apostrophe. The report records a warning for this exception. Standalone quotation, quoted names or titles, `O’Reilly`-style names, and all other HTML entities remain strict.
+
 Standalone URLs, emails, phone numbers, slugs, dates, JSON/code, placeholders, shortcodes, and protected brand names are skipped rather than sent for translation. Slug localization, SEO localization, and Gettext are separate later phases.
 
 ## Review report

@@ -28,6 +28,43 @@ class ValidationTests(unittest.TestCase):
         self.assertInvalid("Accept <strong>Cookies</strong>", "Cookies akzeptieren")
         self.assertInvalid("Copyright &copy;", "Copyright ©")
 
+    def test_allows_only_grammatical_english_apostrophe_entities_to_disappear(self):
+        for source in (
+            "SureCookie doesn&#8217;t guess cookies.",
+            "You&#39;ve saved your site&apos;s settings.",
+            "We&rsquo;re ready when it&#8217;s connected.",
+            "Customers&#8217; consent choices remain available.",
+        ):
+            with self.subTest(source=source):
+                result = validate_translation(
+                    source,
+                    "Die Einstellungen und Einwilligungsoptionen bleiben verfügbar.",
+                    [],
+                )
+                self.assertTrue(result.valid, result.failures)
+                self.assertTrue(
+                    any("apostrophe entity" in warning for warning in result.warnings)
+                )
+
+    def test_keeps_quoted_names_and_non_apostrophe_entities_strict(self):
+        self.assertValid(
+            "Read &#8217;Privacy Policy&#8217; now.",
+            "Lesen Sie jetzt &#8217;Datenschutzerklärung&#8217;.",
+        )
+        self.assertInvalid(
+            "Read &#8217;Privacy Policy&#8217; now.",
+            "Lesen Sie jetzt die Datenschutzerklärung.",
+        )
+        self.assertInvalid(
+            "Open &#39;Users&#39; settings.",
+            "Öffnen Sie die Benutzereinstellungen.",
+        )
+        self.assertInvalid("Read O&#8217;Reilly", "Lesen Sie OReilly")
+        self.assertInvalid("You&#8217;ve connected.", "Sie&#8217;ve verbunden.")
+        self.assertInvalid(
+            "Accept&nbsp;&amp;&nbsp;continue", "Akzeptieren und fortfahren"
+        )
+
     def test_preserves_printf_templates_and_shortcodes(self):
         source = '[code id="7"]Hello %1$s, {site}, {{name}}[/code]'
         target = '[code id="7"]Hallo %1$s, {site}, {{name}}[/code]'

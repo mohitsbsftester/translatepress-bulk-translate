@@ -52,6 +52,8 @@ The export and import paths similarly expose Arabic and English column names and
 
 → `validate_translation()` checks protected content and HTML structure; a bounded individual retry receives the validation reason
 
+→ `_protected_html_entities()` decodes entity candidates and exempts only source-position-verified English contraction or possessive apostrophes, recording a warning while keeping all other entities strict
+
 → `write_review()` records successes and failures
 
 → `write_patch()` includes only passed machine translations and calls `guarded_update_statement()`

@@ -37,6 +37,13 @@ DATEISH = re.compile(
     r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}"
 )
 WORD = re.compile(r"[^\W\d_]+(?:['’][^\W\d_]+)?", re.UNICODE)
+ASCII_WORD_BEFORE = re.compile(r"[A-Za-z]+$")
+ASCII_WORD_AFTER = re.compile(r"[A-Za-z]+")
+APOSTROPHE_CONTRACTION_SUFFIXES = {"s", "d", "ll", "m", "re", "ve"}
+OPENING_QUOTE_BEFORE_WORD = re.compile(
+    r"(?:['\"‘“]|&#(?:39|8216);|&#x2018;|&(?:apos|lsquo|quot);)$",
+    re.IGNORECASE,
+)
 
 VOID_TAGS = {
     "area",
@@ -149,6 +156,45 @@ def _ordered_matches(pattern: re.Pattern[str], value: str) -> list[str]:
     return [match.group(0) for match in pattern.finditer(value)]
 
 
+def _is_english_grammatical_apostrophe_entity(value: str, match: re.Match[str]) -> bool:
+    """Recognize an encoded apostrophe used by English grammar, not quotation."""
+    if html.unescape(match.group(0)) not in {"'", "’"}:
+        return False
+
+    before = value[: match.start()]
+    after = value[match.end() :]
+    stem_match = ASCII_WORD_BEFORE.search(before)
+    if not stem_match:
+        return False
+    stem = stem_match.group(0)
+    suffix_match = ASCII_WORD_AFTER.match(after)
+    if suffix_match:
+        suffix = suffix_match.group(0).casefold()
+        if suffix in APOSTROPHE_CONTRACTION_SUFFIXES:
+            return True
+        return suffix == "t" and stem.casefold().endswith("n")
+
+    # Plural possessives and singular names ending in s place the apostrophe
+    # after the word. Require a following word and reject an immediately quoted
+    # token so a closing quotation mark cannot be mistaken for possession.
+    if stem.casefold().endswith("s") and re.match(r"\s+[A-Za-z]", after):
+        prefix = before[: stem_match.start()]
+        return not OPENING_QUOTE_BEFORE_WORD.search(prefix)
+    return False
+
+
+def _protected_html_entities(value: str) -> tuple[list[str], list[str]]:
+    protected: list[str] = []
+    grammatical_apostrophes: list[str] = []
+    for match in HTML_ENTITY.finditer(value):
+        entity = match.group(0)
+        if _is_english_grammatical_apostrophe_entity(value, match):
+            grammatical_apostrophes.append(entity)
+        else:
+            protected.append(entity)
+    return protected, grammatical_apostrophes
+
+
 def _compare_tokens(
     label: str,
     pattern: re.Pattern[str],
@@ -174,7 +220,6 @@ def validate_translation(
 
     for label, pattern in (
         ("HTML tags and attributes", HTML_TAG),
-        ("HTML entities", HTML_ENTITY),
         ("printf placeholders", PRINTF),
         ("percent template variables", PERCENT_TEMPLATE),
         ("template variables", BRACE_TOKEN),
@@ -188,6 +233,19 @@ def validate_translation(
         ("JSON keys", JSON_KEY),
     ):
         _compare_tokens(label, pattern, source, target, failures)
+
+    source_entities, grammatical_apostrophes = _protected_html_entities(source)
+    target_entities = _ordered_matches(HTML_ENTITY, target)
+    if source_entities != target_entities:
+        failures.append(
+            "HTML entities changed: "
+            f"expected protected entities {source_entities!r}, got {target_entities!r}"
+        )
+    if grammatical_apostrophes:
+        warnings.append(
+            "allowed English contraction/possessive apostrophe entity to change grammatically: "
+            + ", ".join(grammatical_apostrophes)
+        )
 
     source_leading = source[: len(source) - len(source.lstrip())]
     target_leading = target[: len(target) - len(target.lstrip())]
