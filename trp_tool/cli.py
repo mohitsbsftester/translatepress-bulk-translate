@@ -67,6 +67,7 @@ DEFAULT_PROTECTED_NAMES = [
     "Google Tag Manager",
     "CMP",
 ]
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def use_utf8_console() -> None:
@@ -138,6 +139,19 @@ def load_protected_names(path: str | None) -> list[str]:
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         raise ValueError(f"{path} must contain a JSON array of strings")
     return value
+
+
+def load_openai_api_key(env_file: str | Path | None = None) -> str | None:
+    """Read the shell key first, then an explicitly local ignored .env file."""
+    key = os.environ.get("OPENAI_API_KEY")
+    if key:
+        return key
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return None
+    load_dotenv(dotenv_path=env_file or PROJECT_ROOT / ".env", override=False)
+    return os.environ.get("OPENAI_API_KEY")
 
 
 def resolve_table(source: Source, args):
@@ -578,10 +592,10 @@ def cmd_translate(args) -> int:
             raise ValueError("--apply requires --backup")
         if args.backup and not (args.sql_out or args.apply):
             raise ValueError("--backup requires --sql-out or --apply")
-        api_key = os.environ.get("OPENAI_API_KEY")
+        api_key = load_openai_api_key()
         if not api_key:
             raise ValueError(
-                'OPENAI_API_KEY is not configured. In this terminal run: export OPENAI_API_KEY="..."'
+                "OPENAI_API_KEY is not configured. Export it in this process or add it to the ignored project .env file."
             )
 
         translator = OpenAITranslator(

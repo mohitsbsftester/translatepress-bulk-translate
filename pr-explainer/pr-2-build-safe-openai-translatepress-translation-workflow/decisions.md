@@ -54,6 +54,8 @@ GPT-5.6 Luna supports Batch API, but V1 keeps ordinary Responses API requests fo
 
 The supplied SQL export, credentials, reports, patches, rollbacks, and production logs will remain ignored and uncommitted. Only synthetic fixtures may enter version control.
 
+The CLI reads `OPENAI_API_KEY` from the inherited environment first, then the repository's ignored `.env` file without overriding an existing shell value. This supports agent-run processes that cannot inherit an export from a separate terminal while keeping the key out of arguments, logs, reports, SQL, Git, and committed configuration.
+
 ## Sample approval gate
 
 The CLI will support limiting a representative sample and producing review artifacts, but the full SureCookie translation will not run until the user approves the sample.

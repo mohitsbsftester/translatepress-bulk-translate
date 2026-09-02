@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from trp_tool.cli import main
+from trp_tool.cli import load_openai_api_key, main
 from trp_tool.openai_client import Usage
 
 FIXTURE = Path(__file__).parent / "fixtures" / "dictionary.sql"
@@ -43,6 +43,17 @@ class CLITests(unittest.TestCase):
         self.assertIn("Source locale: en_us", output)
         self.assertIn("Target locale: de_de", output)
         self.assertIn("Human-reviewed rows: 1", output)
+
+    def test_local_dotenv_loads_without_overriding_shell(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env_file = Path(directory) / ".env"
+            env_file.write_text("OPENAI_API_KEY=local-test-key\n", encoding="utf-8")
+            with patch.dict(os.environ, {}, clear=True):
+                self.assertEqual(load_openai_api_key(env_file), "local-test-key")
+            with patch.dict(
+                os.environ, {"OPENAI_API_KEY": "shell-test-key"}, clear=True
+            ):
+                self.assertEqual(load_openai_api_key(env_file), "shell-test-key")
 
     def test_translate_is_dry_run_and_reports_required_cost_fields(self):
         code, output, error = self.run_cli(

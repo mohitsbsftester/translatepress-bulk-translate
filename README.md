@@ -35,7 +35,9 @@ The official OpenAI SDK reads `OPENAI_API_KEY` from the environment. The key is 
 export OPENAI_API_KEY="your-key"
 ```
 
-Do not commit `.env`. `.env.example` is only a template, and the CLI does not automatically load it.
+For agent-run commands whose process cannot inherit a separate terminal export, copy `.env.example` to `.env` and fill the value locally. The CLI loads only this ignored project file and never overrides an existing shell value.
+
+Do not commit `.env`.
 
 ## SureCookie English to German
 
