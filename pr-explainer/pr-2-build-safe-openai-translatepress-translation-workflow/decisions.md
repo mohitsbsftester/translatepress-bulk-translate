@@ -2,7 +2,7 @@
 
 ## Repository and contribution target
 
-The upstream repository exposes only `main`. To comply with the required pull request base policy, development is taking place in a maintained fork with `staging` as the base and `codex-mohit/surecookie-openai-translation` as the feature branch. Issue 1 tracks the work.
+The upstream repository exposes only `main`. To comply with the required pull request base policy, development is taking place in a maintained fork with `staging` as the base and `codex-mohit/surecookie-openai-translation` as the feature branch. Issue 1 tracks the work and PR 2 contains the implementation.
 
 ## Preserve the existing workflow where it is sound
 
