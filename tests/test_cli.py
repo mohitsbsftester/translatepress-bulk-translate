@@ -27,6 +27,19 @@ class FakeTranslator:
         return {row_id: source + " übersetzt" for row_id, source in items}
 
 
+class FailingTranslator:
+    calls = 0
+
+    def __init__(self, **kwargs):
+        self.usage = Usage()
+
+    def translate_batch(self, items, correction=""):
+        FailingTranslator.calls += 1
+        from trp_tool.openai_client import TranslationError
+
+        raise TranslationError("model unavailable")
+
+
 class CLITests(unittest.TestCase):
     def run_cli(self, *arguments):
         stdout = io.StringIO()
@@ -61,6 +74,11 @@ class CLITests(unittest.TestCase):
         )
         self.assertEqual(code, 0, error)
         for label in (
+            "Total rows:",
+            "Untranslated rows:",
+            "Translated rows:",
+            "Machine-translated rows:",
+            "Human-reviewed rows:",
             "Provider: OpenAI API",
             "Model: gpt-5.6-luna",
             "Reasoning: none",
@@ -133,6 +151,35 @@ class CLITests(unittest.TestCase):
             self.assertNotIn("secret-test-key", combined)
             self.assertNotIn("status = 2", sql_out.read_text(encoding="utf-8"))
             self.assertIn("gpt-5.6-luna", sql_out.read_text(encoding="utf-8"))
+
+    def test_unrecoverable_api_failure_stops_later_batches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "failed.csv"
+            FailingTranslator.calls = 0
+            with (
+                patch.dict(os.environ, {"OPENAI_API_KEY": "secret-test-key"}),
+                patch("trp_tool.cli.OpenAITranslator", FailingTranslator),
+            ):
+                code, output, error = self.run_cli(
+                    "translate",
+                    "--dump",
+                    str(FIXTURE),
+                    "--execute",
+                    "--limit",
+                    "3",
+                    "--batch-size",
+                    "1",
+                    "--report",
+                    str(report),
+                )
+            self.assertEqual(code, 1, error)
+            self.assertEqual(FailingTranslator.calls, 1)
+            self.assertIn("stopping all later API requests", output)
+            report_text = report.read_text(encoding="utf-8-sig")
+            self.assertIn("model unavailable", report_text)
+            self.assertIn(
+                "not attempted because an earlier OpenAI batch failed", report_text
+            )
 
 
 if __name__ == "__main__":

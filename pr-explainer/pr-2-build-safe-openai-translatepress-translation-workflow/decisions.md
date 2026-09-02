@@ -56,6 +56,8 @@ The supplied SQL export, credentials, reports, patches, rollbacks, and productio
 
 The CLI reads `OPENAI_API_KEY` from the inherited environment first, then the repository's ignored `.env` file without overriding an existing shell value. This supports agent-run processes that cannot inherit an export from a separate terminal while keeping the key out of arguments, logs, reports, SQL, Git, and committed configuration.
 
+An OpenAI batch error that remains after bounded SDK and application retries stops the translation loop. Rows in the failed batch retain the provider error, while all later selected rows are recorded as unattempted. Continuing could spend more credits during a model outage or unsupported-model error and would violate the explicit no-fallback stop requirement.
+
 ## Sample approval gate
 
 The CLI will support limiting a representative sample and producing review artifacts, but the full SureCookie translation will not run until the user approves the sample.

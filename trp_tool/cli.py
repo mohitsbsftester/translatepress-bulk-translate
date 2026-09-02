@@ -557,9 +557,13 @@ def cmd_translate(args) -> int:
         )
         print(f"Table: {table.name}")
         print(f"Total rows: {len(dictionary):,}")
-        print(
-            f"Untranslated rows: {sum(not row.has_translation for row in dictionary):,}"
-        )
+        untranslated = sum(not row.has_translation for row in dictionary)
+        print(f"Untranslated rows: {untranslated:,}")
+        print(f"Translated rows: {len(dictionary) - untranslated:,}")
+        print(f"Machine-translated rows: {table.machine_count:,}")
+        print(f"Human-reviewed rows: {table.human_count:,}")
+        print(f"Similar-translated rows: {table.similar_count:,}")
+        print(f"Other translated rows: {table.other_translated_count:,}")
         print_estimate(
             rows=selected,
             skipped=skipped,
@@ -662,8 +666,25 @@ def cmd_translate(args) -> int:
                             failure_reason=str(exc),
                         )
                     )
-                print(f"Batch {batch_number}/{batches}: failed, no model fallback used")
-                continue
+                for row in selected[start + len(chunk) :]:
+                    records.append(
+                        TranslationRecord(
+                            row=row,
+                            source_language=args.source_language,
+                            target_language=args.target_language,
+                            model=DEFAULT_MODEL,
+                            reasoning_effort=DEFAULT_REASONING_EFFORT,
+                            translation_status="api_failure",
+                            validation_status="not_run",
+                            failure_reason=(
+                                "not attempted because an earlier OpenAI batch failed"
+                            ),
+                        )
+                    )
+                print(
+                    f"Batch {batch_number}/{batches}: failed; stopping all later API requests with no model fallback"
+                )
+                break
 
             valid_count = 0
             for row in chunk:

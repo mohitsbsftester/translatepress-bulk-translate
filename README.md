@@ -10,6 +10,7 @@ The project is based on the original MIT-licensed work by Sajith K. Sasi. The MI
 - Dry-run and cost estimation are the default. A paid request requires `--execute`.
 - The production model is exactly `gpt-5.6-luna` with reasoning effort `none`.
 - There is no model or provider fallback.
+- An unrecoverable OpenAI batch failure stops all later API requests and marks the remaining rows as unattempted in the review report.
 - Full translation requires `--approve-full`, intended only after a sample review.
 - Existing translations are preserved by default. Human-reviewed rows are never selected by machine translation.
 - Failed validation never enters `patch.sql`.
@@ -61,7 +62,7 @@ python trp_translate.py inspect \
   --dump /path/to/wp_trp_dictionary_en_us_de_de.sql
 ```
 
-Inspection reports every discovered regular dictionary table, its prefix, locale pair, total rows, untranslated rows, machine translations, human-reviewed translations, eligible strings, words, characters, and skip reasons.
+Inspection reports every discovered regular dictionary table, its prefix, locale pair, total rows, untranslated rows, machine translations, human-reviewed translations, eligible strings, words, characters, and skip reasons. Translation dry runs also print total translated rows and their status breakdown.
 
 If several regular dictionaries exist, select one on later commands with `--table`, or with both `--source-locale` and `--target-locale`.
 

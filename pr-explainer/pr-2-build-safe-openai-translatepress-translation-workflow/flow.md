@@ -46,6 +46,8 @@ The export and import paths similarly expose Arabic and English column names and
 
 → exact ID-set checks reject missing, duplicate, unexpected, empty, or malformed output
 
+→ an error remaining after bounded retries records the failed batch, marks later rows unattempted, and stops all later API requests
+
 → `validate_translation()` checks protected content and HTML structure; a bounded individual retry receives the validation reason
 
 → `write_review()` records successes and failures
