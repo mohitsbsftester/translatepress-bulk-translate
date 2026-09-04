@@ -1,858 +1,287 @@
-# trp-translate
-
-Bulk translation tooling for [TranslatePress](https://translatepress.com/).
-
-Export your untranslated strings to Excel, translate them (by hand, by
-translator, or by machine), and write them back — without clicking through the
-TranslatePress editor one string at a time.
-
-Runs entirely on your own machine. Nothing is installed on the web server, so
-**cPanel access alone is enough**: you export a `.sql` file, and the tool hands
-you a `.sql` patch to import back.
-
----
-
-## Table of contents
-
-- [Quick run](#quick-run)
-- [What this solves](#what-this-solves)
-- [How TranslatePress stores translations](#how-translatepress-stores-translations)
-- [Install](#install)
-- [Which table am I working on?](#which-table-am-i-working-on)
-- [Getting your data out](#getting-your-data-out)
-- [Workflow A — translate in Excel](#workflow-a--translate-in-excel)
-- [Workflow B — machine translation](#workflow-b--machine-translation)
-- [Applying changes](#applying-changes)
-- [Undoing a change](#undoing-a-change)
-- [Command reference](#command-reference)
-- [How matching works](#how-matching-works)
-- [Troubleshooting](#troubleshooting)
-- [Testing](#testing)
-- [Safety notes](#safety-notes)
-
----
-
-## Quick run
-
-Machine-translate everything still untranslated and apply it through
-phpMyAdmin. No server shell needed — cPanel is enough.
-
-Total time is about ten minutes, and the model cost for a typical site is under
-one cent.
-
-> ### Windows users, read this first
->
-> Commands here are given twice — a **bash** block for macOS and Linux, and a
-> **PowerShell** block for Windows. Copy the one for your system.
->
-> They differ only in how a command is split across lines. bash uses a
-> backslash `\`, PowerShell uses a backtick `` ` ``. Copying the bash version
-> into PowerShell produces:
->
-> ```
-> Missing expression after unary operator '--'.
-> ```
->
-> because PowerShell ignores the `\`, reads the next line on its own, and tries
-> to interpret the leading `--` as a decrement. If you see that error, you
-> copied the wrong block.
-
-### 1. Install (once)
-
-**macOS / Linux**
-
-```bash
-git clone https://github.com/Sajith-K-Sasi/translatepress-bulk-translate.git
-cd translatepress-bulk-translate
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-**Windows (PowerShell)**
-
-```powershell
-git clone https://github.com/Sajith-K-Sasi/translatepress-bulk-translate.git
-cd translatepress-bulk-translate
-py -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
-
-Once the environment is active your prompt shows `(.venv)`, and every command
-below works as written on both platforms. Opening a new terminal later? Re-run
-the activate line first.
-
-> **PowerShell blocks the activate script?** Run
-> `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` in that window
-> and try again, or use `.venv\Scripts\activate.bat` from `cmd.exe`.
-
-### 2. Export the dictionary table
-
-**cPanel → phpMyAdmin →** select your WordPress database → click the
-`wp_trp_dictionary_..._...` table → **Export** → Format **SQL** → **Go**.
-
-Save it as `dump.sql` inside the project folder.
-
-> Not sure which table? See
-> [Which table am I working on?](#which-table-am-i-working-on). With Arabic as
-> the default language and English as the target it is
-> `wp_trp_dictionary_ar_en_gb`.
-
-### 3. Price the job
-
-No API key needed for this step, and it writes nothing.
-
-```bash
-python trp_translate.py translate --dump dump.sql --estimate-only
-```
-
-```
-532 candidate(s), 36 contain Arabic, 496 skipped as non-Arabic
-36 string(s), 5,428 chars, 2 batch(es)
-Estimated: ~2.8k in + ~2.2k out tokens = ~$0.0020
-```
-
-If the candidate count looks wrong, stop and check the table name before
-spending anything.
-
-### 4. Add your API key
-
-Create a key at [openrouter.ai](https://openrouter.ai) and add a dollar of
-credit.
-
-**macOS / Linux**
-
-```bash
-export OPENROUTER_API_KEY=sk-or-...
-```
-
-**Windows (PowerShell)**
-
-```powershell
-$env:OPENROUTER_API_KEY = "sk-or-..."
-```
-
-Either way this lasts for the current terminal only. Set it again in a new one.
-
-### 5. Translate five strings first
-
-Never do the full run blind.
-
-**macOS / Linux**
-
-```bash
-python trp_translate.py translate --dump dump.sql \
-    --context "a commercial printing press in Riyadh" \
-    --limit 5 \
-    --sql-out patch-sample.sql \
-    --backup rollback.sql \
-    --report sample.csv
-```
-
-**Windows (PowerShell)**
-
-```powershell
-python trp_translate.py translate --dump dump.sql `
-    --context "a commercial printing press in Riyadh" `
-    --limit 5 `
-    --sql-out patch-sample.sql `
-    --backup rollback.sql `
-    --report sample.csv
-```
-
-Open `sample.csv` and read the five translations. `--context` matters: it is
-the difference between stiff literal output and copy that reads like the rest
-of your site.
-
-### 6. Apply the sample
-
-**phpMyAdmin →** your database → **Import** → choose `patch-sample.sql` → **Go**.
-
-Then clear any page cache or CDN and load one of the affected pages in the
-target language (e.g. `https://yoursite.com/en/contact/`). Confirm the text
-reads correctly and the layout still holds.
-
-### 7. Translate the rest
-
-Happy with the sample? Drop `--limit` and run the remainder.
-
-**macOS / Linux**
-
-```bash
-python trp_translate.py translate --dump dump.sql \
-    --context "a commercial printing press in Riyadh" \
-    --sql-out patch.sql \
-    --backup rollback-full.sql \
-    --report review.csv
-```
-
-**Windows (PowerShell)**
-
-```powershell
-python trp_translate.py translate --dump dump.sql `
-    --context "a commercial printing press in Riyadh" `
-    --sql-out patch.sql `
-    --backup rollback-full.sql `
-    --report review.csv
-```
-
-Already-translated rows are skipped, so the five from step 5 are not redone and
-nothing you translated by hand is overwritten.
-
-### 8. Apply and clear cache
-
-**phpMyAdmin → Import →** `patch.sql` → **Go**, then clear your page cache and
-CDN.
-
-The patch is wrapped in `START TRANSACTION` / `COMMIT`, so it either applies
-completely or not at all.
-
-### 9. Review in WordPress
-
-Everything written here has `status = 1` (machine translated), so it shows as
-distinct from human-reviewed strings in **TranslatePress → Translate Site**.
-Work through anything that reads awkwardly and mark it reviewed.
-
----
-
-**If something looks wrong,** import `rollback-full.sql` through phpMyAdmin the
-same way. It restores every row in the table to its state before the patch.
-
-**Before your first real run,** take a full database backup through cPanel
-(**cPanel → Backup Wizard**). The rollback file covers this one table; a real
-backup covers everything else.
-
-**Re-export `dump.sql` before each session.** Patches target rows by `id` from
-your snapshot, so if someone edits translations in the TranslatePress editor in
-between, you would overwrite their work.
-
----
-
-## What this solves
-
-The TranslatePress editor is fine for a handful of strings. It stops being fine
-at a few hundred, and a modest Elementor site generates a *lot* of strings — a
-typical 11-page site produces 800+.
-
-This tool gives you three things the editor does not:
-
-- **Bulk export/import** through Excel, so a translator who has never seen
-  WordPress can do the work in a spreadsheet.
-- **Machine translation** of everything still empty, at roughly a tenth of a
-  cent per page, via any model on [OpenRouter](https://openrouter.ai).
-- **A rollback file** for every change, so a bad import is one import away from
-  being undone.
-
-Every command defaults to a **dry run**. Nothing is written unless you pass
-`--apply` or `--sql-out`.
-
----
-
-## How TranslatePress stores translations
-
-Translations live in your WordPress database, not in files. The table that
-matters is:
-
-```
-wp_trp_dictionary_<default-language>_<target-language>
-```
-
-One row per string:
-
-| column | meaning |
-|---|---|
-| `id` | primary key |
-| `original` | source text, **exactly as scraped from the rendered page** |
-| `translated` | the translation |
-| `status` | `0` untranslated, `1` machine translated, `2` human reviewed |
-| `original_id` | link to `wp_trp_original_strings` |
-
-**The critical detail:** TranslatePress only substitutes a translation when
-`original` matches the page HTML byte for byte. The stored copy carries HTML
-entities (`&#8217;`), non-breaking spaces, invisible bidi marks and stray
-diacritics that you will never reproduce by typing.
-
-That is why the workflow is **export first, then fill in**. Round-tripping an
-export guarantees every row matches. Writing a spreadsheet from scratch works
-too, but expect some rows to land in the "unmatched" report.
-
-### What status gets written
-
-`status` is how TranslatePress tells reviewed copy from unreviewed. Each
-command defaults to the value that matches where the text came from:
-
-| command | default `status` | why |
-|---|---|---|
-| `import` | **`2`** human reviewed | the text came from a person — a translator filled in the spreadsheet |
-| `translate` | **`1`** machine translated | the text came from a model and nobody has read it yet |
-
-That difference is the point. Machine output stays visually distinct in
-**TranslatePress → Translate Site**, so you can see at a glance what still
-needs a human pass. Once you have reviewed a string there, TranslatePress
-promotes it to `2` itself.
-
-Override on either command with `--status N` — for example `--status 1` on an
-`import` whose spreadsheet was filled by Google Translate rather than a
-translator.
-
----
+# TranslatePress Bulk Translate
+
+Offline-first bulk translation tooling for [TranslatePress](https://translatepress.com/). It discovers dictionary tables in SQL exports, estimates OpenAI cost, translates only eligible rows, validates protected content, and generates review, patch, and rollback artifacts.
+
+The project is based on the original MIT-licensed work by Sajith K. Sasi. The MIT license and repository history are preserved.
+
+## Safety model
+
+- SQL exports are the production workflow. Direct production database access is not required.
+- Dry-run and cost estimation are the default. A paid request requires `--execute`.
+- The production model is exactly `gpt-5.6-luna` with reasoning effort `none`.
+- There is no model or provider fallback.
+- An unrecoverable OpenAI batch failure stops all later API requests and marks the remaining rows as unattempted in the review report.
+- Full translation requires `--approve-full`, intended only after a sample review.
+- Existing translations are preserved by default. Human-reviewed rows are never selected by machine translation.
+- Failed validation never enters `patch.sql`.
+- Patch and rollback statements verify the row ID, exact source, previous translation, and previous status.
+- Dumps, reports, credentials, patches, rollbacks, and `.env` files are ignored by Git.
 
 ## Install
 
-Requires Python 3.9+. Works on macOS, Linux and Windows.
-
-**macOS / Linux**
+Python 3.10 or newer is recommended.
 
 ```bash
-git clone https://github.com/Sajith-K-Sasi/translatepress-bulk-translate.git
+git clone https://github.com/mohitsbsftester/translatepress-bulk-translate.git
 cd translatepress-bulk-translate
-
+git switch staging
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-**Windows (PowerShell)**
-
-```powershell
-git clone https://github.com/Sajith-K-Sasi/translatepress-bulk-translate.git
-cd translatepress-bulk-translate
-
-py -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
-
-Activation is what makes every example in this README portable: with the
-environment active, plain `python trp_translate.py ...` resolves to the
-virtual environment on either platform. Your prompt shows `(.venv)` when it is
-on, and each new terminal needs the activate line again.
-
-Prefer not to activate? Call the interpreter by path instead —
-`.venv/bin/python` on macOS and Linux, `.venv\Scripts\python.exe` on Windows.
-
-| package | needed for |
-|---|---|
-| `openpyxl` | reading and writing `.xlsx` — always |
-| `pymysql` | connecting to a live database — optional |
-
-If you only ever work from `.sql` dumps, `openpyxl` alone is enough.
-
-### Windows notes
-
-- Use **PowerShell** or **Windows Terminal**. Everything works in `cmd.exe`
-  too, but activation is `.venv\Scripts\activate.bat` there.
-- `docker-test.sh` is a bash script. It needs **WSL**, **Git Bash**, or Docker
-  Desktop's WSL backend. It is optional — the tool itself does not need it.
-- Console output includes source-language text. The tool forces UTF-8 on its
-  own output, so Arabic renders rather than crashing on legacy code pages.
-
----
-
-## Which table am I working on?
-
-In WordPress: **Settings → TranslatePress → General**. Note the *Default
-Language* and the language you are translating **into**.
-
-If the default is Arabic and you translate into British English, the table is
-`wp_trp_dictionary_ar_en_gb`, and each row is Arabic → English. That is this
-tool's default. Anything else:
+The official OpenAI SDK reads `OPENAI_API_KEY` from the environment. The key is not accepted as a command-line argument and is never written to a report or SQL file.
 
 ```bash
---default-lang ar --target-lang en_GB     # or --table wp_trp_dictionary_xx_yy
+export OPENAI_API_KEY="your-key"
 ```
 
-> **Watch out:** if the site's default language was ever changed, old tables are
-> left behind and are no longer used. Only the table matching the *current*
-> default language has any effect. Writing to a stale one does nothing.
+For agent-run commands whose process cannot inherit a separate terminal export, copy `.env.example` to `.env` and fill the value locally. The CLI loads only this ignored project file and never overrides an existing shell value.
 
----
+Do not commit `.env`.
 
-## Getting your data out
+## SureCookie English to German
 
-You need a `.sql` export of the dictionary table. You do **not** need a full
-site backup.
+The included defaults are optimized for SureCookie:
 
-**phpMyAdmin (cPanel → Databases → phpMyAdmin):**
+- Source language: English
+- Target language: German
+- Provider: OpenAI API
+- Model: `gpt-5.6-luna`
+- Reasoning effort: `none`
+- Context: SureCookie as a WordPress cookie consent and privacy product
+- German user address: consistent formal `Sie`/`Ihr`
+- Glossary: `glossary.de.json`
+- Protected names: `protected-names.json`
 
-1. Select your WordPress database in the left sidebar.
-2. Click the `wp_trp_dictionary_..._...` table.
-3. **Export** tab → Format **SQL** → **Go**.
-4. Save the file as `dump.sql` next to this tool.
+The locale codes and WordPress prefix are not hardcoded. The tool derives them from the supplied SQL.
 
-A full-site dump also works — the tool finds the table inside it.
-
-**Alternatively, connect directly.** If your host offers **Remote MySQL** in
-cPanel, allowlist your IP and skip the export/import cycle entirely:
+### 1. Inspect the export
 
 ```bash
---db-host yourserver.com --db-name wp_xxxx --db-user wp_xxxx --db-pass '...'
+python trp_translate.py inspect \
+  --dump /path/to/wp_trp_dictionary_en_us_de_de.sql
 ```
 
-Or read the credentials straight out of a local copy of `wp-config.php`:
+Inspection reports every discovered regular dictionary table, its prefix, locale pair, total rows, untranslated rows, machine translations, human-reviewed translations, eligible strings, words, characters, and skip reasons. Translation dry runs also print total translated rows and their status breakdown.
+
+If several regular dictionaries exist, select one on later commands with `--table`, or with both `--source-locale` and `--target-locale`.
+
+### 2. Estimate the complete job
 
 ```bash
---wp-config /path/to/wp-config.php
+python trp_translate.py translate \
+  --dump /path/to/wp_trp_dictionary_en_us_de_de.sql \
+  --source-locale en_us \
+  --target-locale de_de \
+  --glossary glossary.de.json \
+  --protected-names protected-names.json \
+  --estimate-only \
+  --max-cost 5
 ```
 
----
+Before any paid request, the command prints:
 
-## Workflow A — translate in Excel
+```text
+Provider: OpenAI API
+Model: gpt-5.6-luna
+Reasoning: none
+Source: English
+Target: German
+Eligible strings: ...
+Source words: ...
+Characters: ...
+Estimated input tokens: ...
+Estimated output tokens: ...
+Number of batches: ...
+Estimated API cost: ...
+Maximum approved cost: ...
+```
 
-### 1. Export what still needs translating
+Current default estimates use the published standard prices for GPT-5.6 Luna: $0.20 per million input tokens, $0.02 per million cached input tokens, and $1.20 per million output tokens. Pricing can change, so verify the [official model page](https://developers.openai.com/api/docs/models/gpt-5.6-luna) and override `--price-input`, `--price-cached-input`, or `--price-output` when needed.
+
+If the estimate exceeds `--max-cost`, the command stops before checking the API key or creating a request.
+
+### 3. Translate a representative sample
 
 ```bash
-python trp_translate.py export --dump dump.sql --out todo.xlsx
+python trp_translate.py translate \
+  --dump /path/to/wp_trp_dictionary_en_us_de_de.sql \
+  --source-locale en_us \
+  --target-locale de_de \
+  --glossary glossary.de.json \
+  --protected-names protected-names.json \
+  --limit 15 \
+  --max-cost 1 \
+  --execute \
+  --report sample.xlsx \
+  --sql-out sample-patch.sql \
+  --backup sample-rollback.sql
 ```
 
-You get a formatted spreadsheet, right-to-left aligned where appropriate:
+The sample selector prefers a useful mix when the dump contains it: HTML, placeholders, privacy or consent wording, short calls to action, questions, short UI text, and long text. Open `sample.xlsx` and review English and German side by side.
 
-| id | Arabic (original) | English (translation) | status |
-|---|---|---|---|
-| 42 | مرحبًا بكم في… | | not translated |
+Do not run the full job until the sample is approved.
 
-Add `--all` to include rows that already have a translation.
+### 4. Translate the complete eligible set
 
-### 2. Fill in the translation column
-
-Give `todo.xlsx` to your translator. One rule:
-
-> **Do not edit the original column.** It is the matching key. Change it and the
-> row will not match.
-
-### 3. Preview the import
+After sample approval:
 
 ```bash
-python trp_translate.py import --excel todo.xlsx --dump dump.sql --report review.csv
+python trp_translate.py translate \
+  --dump /path/to/wp_trp_dictionary_en_us_de_de.sql \
+  --source-locale en_us \
+  --target-locale de_de \
+  --glossary glossary.de.json \
+  --protected-names protected-names.json \
+  --max-cost 5 \
+  --execute \
+  --approve-full \
+  --report review.xlsx \
+  --sql-out patch.sql \
+  --backup rollback.sql \
+  --preflight preflight.sql
 ```
 
-Nothing is written. You get a summary:
+Review `review.xlsx` before importing. Machine output is written with TranslatePress status `1`, never status `2`.
 
-```
-Match results
-  fill           412
-  overwrite        3
-  unchanged      288
-  unmatched        7
-  matched via   exact=703  normalized=9
-```
+Run `preflight.sql` in one database session immediately before importing the patch. It creates only a session-scoped temporary table, compares every patch row against the exact ID, source, previous translation, and status snapshot, reports any mismatch, and drops the temporary table. Continue only when the detail query returns no rows and the summary reports `stale_rows = 0` with `matched_rows` equal to `expected_rows`.
 
-| outcome | meaning |
-|---|---|
-| `fill` | empty row gets a translation |
-| `overwrite` | replaces an existing translation |
-| `status-only` | same text, status changes (e.g. machine → reviewed) |
-| `unchanged` | already identical |
-| `unmatched` | **no matching original — will have no effect** |
-| `conflict` | two sheet rows target the same row with different text |
-| `skipped` | blank translation, or `--skip-translated` |
+### 5. Import and verify
 
-Open `review.csv` to see every row and why it landed where it did. Investigate
-`unmatched` before proceeding — those are usually edited originals.
+1. Take a fresh full WordPress database backup.
+2. Re-export the TranslatePress dictionary if the site changed after the reviewed snapshot.
+3. In phpMyAdmin, select the correct database and import `patch.sql`.
+4. Review each `affected_rows` result. `1` means the guarded update applied. `0` means the live row differed from the snapshot and was safely left unchanged.
+5. Clear WordPress page/object caches and the CDN.
+6. Visit representative German pages and test headings, buttons, forms, banners, docs, responsive layouts, and consent flows.
+7. Review machine translations in TranslatePress and promote them to human-reviewed only after a person checks them.
 
-### 4. Write it
+If the patch must be undone, import `rollback.sql`. Rollback is also guarded: it restores a row only if it still contains the exact machine translation and status written by the patch. Later manual work is not silently overwritten.
 
-See [Applying changes](#applying-changes).
+## What validation protects
 
----
+Every returned row must have exactly one requested stable row ID. Missing, duplicate, unexpected, empty, or malformed structured output is rejected and retried without changing the model.
 
-## Workflow B — machine translation
+The content validator compares source and target for:
 
-Translates everything still empty using a model of your choice on OpenRouter.
-Cheap models handle website copy well, and the volume is small: a typical site
-costs well under one cent.
+- HTML tags, nesting, and attributes
+- HTML entities
+- printf placeholders such as `%s`, `%1$s`, and `%2$d`
+- template variables such as `{service}` and `{{name}}`
+- WordPress shortcodes
+- URLs, email addresses, and phone numbers
+- file paths and file names
+- inline and fenced code
+- CSS selectors and JSON keys
+- protected product names
+- leading/trailing whitespace and newline counts
+- utf8mb4 text including `ä`, `ö`, `ü`, `Ä`, `Ö`, `Ü`, and `ß`
 
-### 1. Get an API key
+English apostrophe entities are the narrow exception. The validator decodes and relaxes them only when their position and suffix identify an English contraction or possessive whose German translation no longer needs the apostrophe. The report records a warning for this exception. Standalone quotation, quoted names or titles, `O’Reilly`-style names, and all other HTML entities remain strict.
 
-Sign up at [openrouter.ai](https://openrouter.ai), create a key, top up a dollar.
+Standalone URLs, emails, phone numbers, slugs, dates, JSON/code, placeholders, shortcodes, and protected brand names are skipped rather than sent for translation. Slug localization, SEO localization, and Gettext are separate later phases.
+
+## Review report
+
+CSV, TSV, and XLSX reports include:
+
+- row ID and source hash
+- source and target languages
+- exact stored source and translated text
+- previous translation and status
+- intended new status
+- exact model and reasoning effort
+- translation and validation status
+- warnings and failure reason
+
+Possible outcomes include `translated`, `already_translated`, `skipped`, `unchanged`, `failed_validation`, `api_failure`, `protected_content`, `conflict`, and `stale_source`.
+
+## Spreadsheet workflow
+
+Export untranslated rows:
 
 ```bash
-export OPENROUTER_API_KEY=sk-or-...          # macOS / Linux
+python trp_translate.py export \
+  --dump dump.sql \
+  --source-locale en_us \
+  --target-locale de_de \
+  --out translations.xlsx
 ```
 
-```powershell
-$env:OPENROUTER_API_KEY = "sk-or-..."        # Windows PowerShell
-```
-
-### 2. Price the job first — no key required
+After a human fills `target_text`, preview the import:
 
 ```bash
-python trp_translate.py translate --dump dump.sql --estimate-only
+python trp_translate.py import \
+  --dump dump.sql \
+  --source-locale en_us \
+  --target-locale de_de \
+  --excel translations.xlsx \
+  --report import-review.xlsx
 ```
 
-```
-532 candidate(s), 36 contain Arabic, 496 skipped as non-Arabic
-36 string(s), 5,428 chars, 2 batch(es)
-Estimated: ~2.8k in + ~2.2k out tokens = ~$0.0020
-```
-
-> **Why so many are skipped:** only strings actually containing source-language
-> text are sent. Rows whose "original" is already in the target language need no
-> translation, and sending them just invites the model to rewrite copy nobody
-> asked it to touch.
-
-### 3. Do a small run and read the output
+Generate a guarded patch and rollback:
 
 ```bash
-python trp_translate.py translate --dump dump.sql --limit 5 --report sample.csv --sql-out sample-patch.sql
+python trp_translate.py import \
+  --dump dump.sql \
+  --source-locale en_us \
+  --target-locale de_de \
+  --excel translations.xlsx \
+  --report import-review.xlsx \
+  --sql-out import-patch.sql \
+  --backup import-rollback.sql \
+  --preflight import-preflight.sql
 ```
 
-Read `sample.csv` before trusting the rest.
+Human spreadsheet imports default to status `2`. Use `--status 1` if the sheet contains unreviewed machine output. Existing translations are preserved unless `--overwrite-existing` is explicitly supplied.
 
-### 4. Translate the remainder
+Matching first uses `row_id` plus the exact source. If IDs are absent, it tries exact, Unicode-normalized, and entity/typography-normalized source matching. A row ID whose exact source changed becomes `stale_source`.
 
-**macOS / Linux**
+## Optional live database workflow
+
+Offline SQL remains the recommended production path. For local or throwaway environments, commands can read from MySQL with `--wp-config` or `--db-host`, `--db-name`, `--db-user`, and `--db-pass`.
+
+Direct `--apply` requires `--backup`. Updates use the same snapshot conditions and report stale conflicts.
+
+## Batch API evaluation
+
+GPT-5.6 Luna supports the OpenAI Batch API. It can be useful for a later, very large run, but it is intentionally not the only or default workflow here. The ordinary Responses API is used for the 10 to 20 string sample because it is immediate and easier to validate.
+
+Batch submission is deferred until the normal SureCookie workflow is proven. Any future Batch mode must preserve the same stable IDs, strict schema, cost guard, validation, partial-failure reporting, and patch exclusion rules. Reliability and reviewability take priority over asynchronous throughput.
+
+## Architecture
+
+```text
+trp_translate.py
+  -> trp_tool.cli             command orchestration and safety gates
+  -> trp_tool.sql             dump/live reads, discovery, guarded SQL
+  -> trp_tool.spreadsheet     CSV/XLSX and matching
+  -> trp_tool.openai_client   Responses API and strict output models
+  -> trp_tool.validation      eligibility and protected content
+  -> trp_tool.reports         review CSV/XLSX
+  -> trp_tool.models          shared TranslatePress records and statuses
+```
+
+## Tests
+
+The automated suite uses synthetic data and no credentials:
 
 ```bash
-python trp_translate.py translate --dump dump.sql \
-    --context "a commercial printing press in Riyadh" \
-    --glossary glossary.json \
-    --sql-out patch.sql --backup rollback.sql --report review.csv
+python -m unittest discover -v
 ```
 
-**Windows (PowerShell)**
+It covers configurable languages, German Unicode, SQL parsing/escaping, quotes, apostrophes, newlines, utf8mb4, HTML, entities, placeholders, variables, shortcodes, URLs, emails, protected brands, malformed API output, ID mismatches, retries, existing/human translations, dry-run, cost guards, spreadsheet round-trips, guarded patch/rollback, and stale source protection.
 
-```powershell
-python trp_translate.py translate --dump dump.sql `
-    --context "a commercial printing press in Riyadh" `
-    --glossary glossary.json `
-    --sql-out patch.sql --backup rollback.sql --report review.csv
-```
-
-`--context` steers register and is worth setting. `--glossary` pins terms you
-want translated consistently:
-
-```json
-{
-  "مطبعة الفضلي": "Al-Fadli Printing Press",
-  "الطباعة الأوفست": "offset printing"
-}
-```
-
-### Recovering English you already have
-
-If the Arabic on the site was itself written from an English source — a blog
-post, a brochure, approved marketing copy — then translating it back is
-recovery, not translation. The right answer is already written down. Hand that
-document over with `--reference`:
-
-**macOS / Linux**
+The Docker harness adds a disposable MariaDB integration check:
 
 ```bash
-python trp_translate.py translate --dump dump.sql \
-    --reference blog-en.md \
-    --report review.csv --sql-out patch.sql
+./docker-test.sh verify
+./docker-test.sh down
 ```
 
-**Windows (PowerShell)**
+`verify` recreates the disposable container from the synthetic fixture on every run.
 
-```powershell
-python trp_translate.py translate --dump dump.sql `
-    --reference blog-en.md `
-    --report review.csv --sql-out patch.sql
-```
-
-Without it, back-translation quietly loses the phrasing you paid for: "Request a
-Quote" returns as "Ask for a price offer" — accurate, and not your copy. With
-the document in the prompt, strings that appear in it come back verbatim.
-
-Plain text only, `.txt` or `.md`. A `.docx` or `.pdf` is rejected with
-instructions rather than sent as binary noise — export it as plain text first.
-Repeat the flag for several documents:
-
-```bash
---reference about.md --reference services.md
-```
-
-The run reports how much was recovered rather than invented, and `--report`
-gains an `in_reference` column saying so per row:
-
-```
-Reference: 1 document(s), 3,994 chars
-Reference: 17/36 answer(s) found verbatim in the document, 19 translated fresh
-```
-
-Read those 19. They are the strings your document does not cover.
-
-A row counts as recovered when at least 80% of its five-word sequences also
-appear in the document. That tolerance is deliberate: WordPress serves post
-excerpts truncated with a trailing `[&#8230;]`, and a strict comparison would
-report a perfectly recovered paragraph as "fresh" over one ellipsis or one stray
-comma. Answers shorter than five words always report `no` — a common phrase
-turning up somewhere in a long document is not evidence of anything.
-
-> **Cost.** The reference lives in the system prompt, so it is resent with every
-> batch. The estimate accounts for it and shows the share:
->
-> ```
->   the reference is ~9.8k tokens resent on each of 2 batch(es) - 87% of input
->   raise --batch-size to send it fewer times
-> ```
->
-> A larger `--batch-size` sends it fewer times. On a 39KB reference, moving from
-> the default 25 to `--batch-size 50` fit the job into one batch and cut input
-> from ~22.3k to ~12.2k tokens.
-
-Results are written with `status = 1` (machine translated), so they stay
-visually distinct from human-reviewed strings in the TranslatePress editor.
-Existing translations are never touched unless you pass `--retranslate`.
-
-### Choosing a model
-
-Default is `google/gemini-3.1-flash-lite`. Any OpenRouter model id works:
-
-```bash
---model qwen/qwen3.7-flash          # very cheap, strong on Arabic
---model google/gemini-2.5-flash-lite
---model openai/gpt-5-nano
-```
-
-Pricing changes; set `--price-in` / `--price-out` (dollars per million tokens)
-so the estimate stays honest, and cap spend with `--max-cost`.
-
----
-
-## Applying changes
-
-Three ways, in increasing order of directness.
-
-### Option 1 — SQL patch (works with cPanel only)
-
-```bash
-... --sql-out patch.sql --backup rollback.sql
-```
-
-Then **phpMyAdmin → your database → Import → choose `patch.sql` → Go**.
-
-The file is wrapped in `START TRANSACTION` / `COMMIT`, so it applies
-all-or-nothing, and declares `SET NAMES utf8mb4` so non-Latin text imports
-intact.
-
-> **Re-export before each run.** The patch targets rows by `id` from your
-> snapshot. If someone edits translations in the TranslatePress editor between
-> your export and your import, you would overwrite their work. Export → patch →
-> import in one sitting.
-
-### Option 2 — direct write
-
-Needs a reachable database (Remote MySQL, an SSH tunnel, or running on the
-server):
-
-```bash
-... --wp-config wp-config.php --backup rollback.sql --apply
-```
-
-### Option 3 — dry run
-
-The default. Prints what would change and exits.
-
-**After applying:** clear any page cache and CDN. TranslatePress reads from the
-database, but cached HTML still serves the old text.
-
----
-
-## Undoing a change
-
-Always pass `--backup rollback.sql`. It captures the current `translated` and
-`status` of **every** row in the table before anything changes.
-
-To undo: import `rollback.sql` the same way you imported the patch.
-
-`--backup` works with `--sql-out` and with `--apply`, so you get a rollback even
-when you cannot reach the database directly.
-
-> This covers one table. Take a full database backup through cPanel before your
-> first real run — that covers the mistake nobody predicted.
-
----
-
-## Command reference
-
-### Shared options
-
-```
---dump FILE              read from a .sql dump (offline)
---wp-config FILE         read DB credentials from a wp-config.php
---db-host / --db-port / --db-name / --db-user / --db-pass
---prefix wp_             table prefix
---default-lang ar        TranslatePress default language
---target-lang en_GB      language being translated into
---table NAME             override the table name entirely
-```
-
-### `export`
-
-```
---out FILE               .xlsx or .csv (default: translations.xlsx)
---all                    include rows that already have a translation
-```
-
-### `import`
-
-```
---excel FILE             .xlsx, .csv or .tsv                     [required]
---sheet NAME             worksheet name (default: first)
---arabic-col / --english-col    column by header, number or letter
---status N               status to write (default: 2, human reviewed | see "What status gets written")
---max-tier N             loosest match tier, 0-3 (default: 2)
---skip-translated        never touch rows that already have a translation
---report FILE            per-row CSV report
---sql-out FILE           write UPDATE statements instead of applying
---backup FILE            write a rollback .sql
---apply                  write to the database
-```
-
-Columns are auto-detected from headers, or by which script the content is
-actually in. Override when in doubt: `--arabic-col B --english-col C`.
-
-### `translate`
-
-```
---api-key KEY            default: $OPENROUTER_API_KEY
---model ID               default: google/gemini-3.1-flash-lite
---context TEXT           one-line description of the site
---glossary FILE          JSON of {source: target} terms to pin
---reference FILE         .txt/.md the source text was written from; the model
-                         recovers wording from it instead of back-translating.
-                         Repeatable
---batch-size N           strings per request (default: 25)
---limit N                translate at most N strings
---retranslate            include rows that already have a translation
---status N               status to write (default: 1, machine translated | see "What status gets written")
---price-in / --price-out dollars per 1M tokens, for the estimate
---max-cost N             abort if the estimate exceeds this (default: 5.00)
---estimate-only          price the job and exit
---report / --sql-out / --backup / --apply    as above
-```
-
----
-
-## How matching works
-
-Spreadsheet rows are matched to database rows through four tiers, strictest
-first. The report tells you which tier each row hit.
-
-| tier | name | what it tolerates |
-|---|---|---|
-| 0 | `exact` | nothing — byte-identical |
-| 1 | `normalized` | Unicode NFC, invisible/bidi characters, trimming |
-| 2 | `entity-folded` | HTML entities, smart quotes, collapsed whitespace |
-| 3 | `fuzzy` | Arabic diacritics, tatweel, alef/yeh variants, digit forms |
-
-Default is `--max-tier 2`. Tier 3 is opt-in because folding diacritics can
-merge genuinely different strings — use it, then read the report.
-
-Two safety behaviours worth knowing:
-
-- **Ambiguity.** If several database rows share one normalised original, an
-  untranslated one is preferred and the row is flagged `ambiguous`.
-- **Conflicts.** If two spreadsheet rows resolve to the same database row with
-  different text, the first wins and the rest are reported rather than silently
-  overwriting each other.
-
----
-
-## Troubleshooting
-
-**Everything comes back `unmatched`.**
-The originals were edited, or you are pointed at the wrong table. Run `export
---all` and compare against your sheet. Check the table name matches your
-*current* default language.
-
-**Translations do not appear on the site.**
-Clear your page cache and CDN. Confirm you wrote to the table for the current
-default language. Confirm `status` is not `0`.
-
-**Arabic shows as `Ø£Ø®Ø±` after importing.**
-A charset problem in phpMyAdmin. The generated patches declare `SET NAMES
-utf8mb4` — if you hand-edited the file, keep that line, and make sure it is
-saved as UTF-8.
-
-**PowerShell: `Missing expression after unary operator '--'`.**
-You copied a bash command into PowerShell. The two shells split a long command
-across lines differently — bash uses a trailing backslash `\`, PowerShell uses
-a trailing backtick `` ` ``. PowerShell ignores the `\`, reads the next line on
-its own, sees a leading `--` and tries to interpret it as a decrement.
-
-Use the **Windows (PowerShell)** block instead of the **macOS / Linux** one.
-Or put the whole command on a single line, which works in every shell:
-
-```powershell
-python trp_translate.py translate --dump dump.sql --limit 5 --sql-out patch-sample.sql --backup rollback.sql --report sample.csv
-```
-
-**PowerShell: `running scripts is disabled on this system`.**
-The execution policy is blocking `Activate.ps1`. In that window run
-`Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`, then activate
-again. It applies to that terminal only.
-
-**Windows: `python` is not recognised.**
-Either the virtual environment is not active — re-run
-`.venv\Scripts\Activate.ps1` and look for `(.venv)` in your prompt — or Python
-is not on PATH. Try `py` instead of `python`, or reinstall Python with "Add
-python.exe to PATH" ticked.
-
-**`--apply` refuses to run.**
-It needs a live connection. With `--dump` you must use `--sql-out`.
-
-**`error: could not identify the Arabic and English columns`.**
-Pass them explicitly: `--arabic-col B --english-col C`.
-
-**The model returns fewer strings than sent.**
-Handled automatically: the batch is retried, then each string individually. Any
-genuine failures are listed at the end. Lower `--batch-size` if it is frequent.
-
----
-
-## Testing
-
-A Docker harness loads your dictionary table into a throwaway MariaDB and
-rehearses the whole flow against a copy of your own data.
-
-```bash
-./docker-test.sh up       # start MariaDB 11.8, load the dump
-./docker-test.sh verify   # run the checks
-./docker-test.sh shell    # mariadb prompt
-./docker-test.sh down     # destroy it
-```
-
-```
-==> 1/5 dump parser vs live MySQL driver
-    PASS  823 rows byte-identical
-==> 2/5 export -> import round-trip is a no-op
-    PASS  3 outcome classes, no content changes
-==> 3/5 apply 50 translations, then roll back
-    PASS  rollback restored byte-for-byte
-==> 4/5 SQL escaping via --sql-out + mariadb CLI
-    PASS  8/8 hostile strings stored verbatim
-==> 5/5 injection string did not execute
-    PASS  all 9 tables intact
-```
-
-Check 1 matters most: it proves the offline `.sql` parser returns exactly what
-the real MySQL driver returns, so dry runs against a dump are trustworthy.
-Check 4 pushes quotes, backslashes, newlines and `; DROP TABLE y;` through the
-patch path and back out of the database.
-
-The harness uses a throwaway container password and never touches your live
-site.
-
----
-
-## Safety notes
-
-- **Never commit dumps, backups or `wp-config.php`.** They contain credentials,
-  password hashes and customer data. The included `.gitignore` blocks `*.sql`,
-  `*.zip`, `wp-config.php`, spreadsheets and generated patches — keep it.
-- **Take a full database backup** through cPanel before your first real run.
-- **Start with `--limit`.** Apply a handful, look at the site, then do the rest.
-- **Keep the rollback file** until you are satisfied.
-- **API keys go in the environment**, never on the command line in shared
-  shells, and never in the repo.
-
----
-
-## Licence
+## License
 
 MIT. See [LICENSE](LICENSE).

@@ -1,54 +1,49 @@
-"""Pull just the wp_trp_* statements out of a full WordPress dump.
+#!/usr/bin/env python3
+"""Extract TranslatePress table statements from a full WordPress SQL dump."""
 
-Usage: python extract_trp_tables.py OUT.sql [IN.sql]
+from __future__ import annotations
 
-The full dump cannot be imported as-is: phpMyAdmin mis-exported a Wordfence
-table (`DEFAULT x AS ...`), which aborts the import long after the
-TranslatePress tables have loaded. This pulls out only what we need.
-"""
-import re, sys
+import argparse
+import re
+from pathlib import Path
 
-src = sys.argv[2] if len(sys.argv) > 2 else "dump.sql"
-out = sys.argv[1]
+from trp_tool.sql import split_sql_statements
 
-text = open(src, encoding="utf-8", errors="replace").read()
+TRP_TABLE = re.compile(r"`[^`]*trp_[^`]+`", re.IGNORECASE)
+ALLOWED = re.compile(
+    r"^\s*(?:CREATE\s+TABLE|INSERT\s+INTO|ALTER\s+TABLE)", re.IGNORECASE
+)
 
-# Split into top-level statements on semicolons outside string literals / comments.
-stmts, buf, i, in_str, in_line_comment = [], [], 0, False, False
-while i < len(text):
-    c = text[i]
-    if in_line_comment:
-        buf.append(c)
-        if c == "\n":
-            in_line_comment = False
-        i += 1
-        continue
-    if in_str:
-        if c == "\\" and i + 1 < len(text):
-            buf.append(c); buf.append(text[i+1]); i += 2; continue
-        if c == "'":
-            in_str = False
-        buf.append(c); i += 1; continue
-    if c == "'":
-        in_str = True; buf.append(c); i += 1; continue
-    if text.startswith("--", i) or text.startswith("#", i):
-        in_line_comment = True; buf.append(c); i += 1; continue
-    if c == ";":
-        stmts.append("".join(buf).strip()); buf = []; i += 1; continue
-    buf.append(c); i += 1
-if "".join(buf).strip():
-    stmts.append("".join(buf).strip())
 
-keep = [s for s in stmts if re.search(r"`wp_trp_\w+`", s)
-        and re.match(r"^\s*(--[^\n]*\n|\s)*(CREATE TABLE|INSERT INTO|ALTER TABLE)", s, re.I)]
+def extract_statements(text: str) -> list[str]:
+    return [
+        statement
+        for statement in split_sql_statements(text)
+        if ALLOWED.match(statement) and TRP_TABLE.search(statement)
+    ]
 
-with open(out, "w", encoding="utf-8") as fh:
-    fh.write("SET NAMES utf8mb4;\nSET SQL_MODE='NO_AUTO_VALUE_ON_ZERO';\n\n")
-    for s in keep:
-        fh.write(s + ";\n")
 
-kinds = {}
-for s in keep:
-    m = re.search(r"(CREATE TABLE|INSERT INTO|ALTER TABLE)", s, re.I)
-    kinds[m.group(1).upper()] = kinds.get(m.group(1).upper(), 0) + 1
-print(f"extracted {len(keep)} statements {kinds} -> {out}")
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("output", help="destination SQL file")
+    parser.add_argument("input", nargs="?", default="dump.sql", help="source dump")
+    args = parser.parse_args(argv)
+    source = Path(args.input).read_text(encoding="utf-8", errors="replace")
+    statements = extract_statements(source)
+    with Path(args.output).open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write("SET NAMES utf8mb4;\nSET SQL_MODE='NO_AUTO_VALUE_ON_ZERO';\n\n")
+        handle.writelines(statement + ";\n" for statement in statements)
+    kinds: dict[str, int] = {}
+    for statement in statements:
+        match = re.match(
+            r"\s*(CREATE\s+TABLE|INSERT\s+INTO|ALTER\s+TABLE)", statement, re.IGNORECASE
+        )
+        if match:
+            kind = match.group(1).upper()
+            kinds[kind] = kinds.get(kind, 0) + 1
+    print(f"extracted {len(statements)} statements {kinds} -> {args.output}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

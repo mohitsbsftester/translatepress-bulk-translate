@@ -5,6 +5,7 @@
 # addresses. Never commit them, especially to a public repository.
 # ---------------------------------------------------------------------------
 *.sql
+!tests/fixtures/*.sql
 *.sql.gz
 *.sql.zip
 *.zip
@@ -32,10 +33,14 @@ review*.csv
 # Credentials
 .env
 .env.*
+!.env.example
 *.pem
 *.key
 secrets.json
 glossary.json
+
+# Local research notes are not part of the public tool.
+.codex/
 
 # Python
 .venv/
