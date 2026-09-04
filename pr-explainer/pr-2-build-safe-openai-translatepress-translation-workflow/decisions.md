@@ -36,9 +36,13 @@ Eligibility filtering avoids spending tokens on standalone URLs, emails, phones,
 
 English apostrophe entities receive a user-approved grammatical exception. The validator decodes each entity and examines its position in the source token. It relaxes recognized contraction suffixes, singular possessives, and conservatively detected plural possessives, then records a review warning. It does not globally whitelist apostrophe entities: standalone quotation, immediately quoted words, `O’Reilly`-style names, and every non-apostrophe entity stay exact. This avoids rejecting natural German solely because English contraction or possessive grammar disappeared, without weakening formatting or technical-token protection.
 
+Printf placeholder recognition now requires a token boundary after the conversion specifier. Without that boundary, ordinary prose such as `80% of problems` was misread as the valid-looking `% o` placeholder and a German `80 % der Probleme` was misread as `% d`. The boundary keeps real placeholders including `%s`, `%1$s`, `% d`, `%.2f`, and `%08x` protected while excluding percentage words such as `80% of`, `100% complete`, and `20% discount`.
+
 ## Snapshot-safe patch and rollback
 
 Each patch statement matches the row ID, exact source, previous translation including NULL, and previous status. Rollback performs the inverse check against the generated translation and machine status. A stale live row therefore produces zero affected rows instead of overwriting newer work. The generated SQL emits `ROW_COUNT()` after each guarded update for phpMyAdmin review.
+
+An optional generated preflight uses a session-scoped temporary table containing the same exact guard snapshot. It performs no update against the TranslatePress table, reports missing rows and source, translation, or status changes, summarizes matched and stale counts, and removes the temporary table. A temporary table was preferred over a large derived `UNION` because it preserves LONGTEXT and NULL values without type inference or truncation risk and gives one auditable mismatch report before import.
 
 ## SQL parsing
 

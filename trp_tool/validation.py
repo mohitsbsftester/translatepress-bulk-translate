@@ -11,7 +11,8 @@ from .models import ValidationResult
 HTML_TAG = re.compile(r"<!--.*?-->|</?[A-Za-z][^>]*>", re.DOTALL)
 HTML_ENTITY = re.compile(r"&(?:#\d+|#x[0-9A-Fa-f]+|[A-Za-z][A-Za-z0-9]+);")
 PRINTF = re.compile(
-    r"%(?:\d+\$)?[-+0 #]*(?:\d+|\*)?(?:\.\d+|\.\*)?[hlLzjt]*[diuoxXfFeEgGaAcspn%]"
+    r"%(?:\d+\$)?[-+0 #]*(?:\d+|\*)?(?:\.\d+|\.\*)?[hlLzjt]*"
+    r"[diuoxXfFeEgGaAcspn%](?![A-Za-z0-9_])"
 )
 PERCENT_TEMPLATE = re.compile(r"%(?:[A-Za-z_][A-Za-z0-9_.:-]*)")
 BRACE_TOKEN = re.compile(r"\{\{\{?[A-Za-z0-9_.:-]+\}?\}\}|\{[A-Za-z0-9_.:-]+\}")

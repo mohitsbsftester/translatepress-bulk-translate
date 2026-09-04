@@ -39,6 +39,7 @@ from .sql import (
     select_table,
     validate_identifier,
     write_patch,
+    write_preflight,
     write_rollback,
 )
 from .validation import (
@@ -513,6 +514,9 @@ def cmd_import(args) -> int:
             write_rollback(args.backup, table.name, valid)
             print(f"Patch: {args.sql_out}")
             print(f"Rollback: {args.backup}")
+            if args.preflight:
+                write_preflight(args.preflight, table.name, valid)
+                print(f"Preflight: {args.preflight}")
         elif args.apply:
             if not args.backup:
                 raise ValueError("--apply requires --backup")
@@ -522,6 +526,8 @@ def cmd_import(args) -> int:
             print(f"Applied: {applied:,}; stale/conflicted: {stale:,}")
         elif args.backup:
             raise ValueError("--backup requires --sql-out or --apply")
+        elif args.preflight:
+            raise ValueError("--preflight requires --sql-out")
         else:
             print(
                 f"DRY RUN: {len(valid):,} row(s) would be updated. Nothing was written."
@@ -596,6 +602,8 @@ def cmd_translate(args) -> int:
             raise ValueError("--apply requires --backup")
         if args.backup and not (args.sql_out or args.apply):
             raise ValueError("--backup requires --sql-out or --apply")
+        if args.preflight and not args.sql_out:
+            raise ValueError("--preflight requires --sql-out")
         api_key = load_openai_api_key()
         if not api_key:
             raise ValueError(
@@ -769,11 +777,16 @@ def cmd_translate(args) -> int:
             write_rollback(args.backup, table.name, valid)
             print(f"Patch: {args.sql_out}")
             print(f"Rollback: {args.backup}")
+            if args.preflight:
+                write_preflight(args.preflight, table.name, valid)
+                print(f"Preflight: {args.preflight}")
         elif args.apply:
             write_rollback(args.backup, table.name, valid)
             applied, stale = apply_records(source, table.name, valid)
             print(f"Rollback: {args.backup}")
             print(f"Applied: {applied:,}; stale/conflicted: {stale:,}")
+        elif args.preflight:
+            raise ValueError("--preflight requires --sql-out")
         else:
             print(
                 "No database or SQL output was requested. Translations exist only in the report."
@@ -852,6 +865,9 @@ def build_parser() -> argparse.ArgumentParser:
     importer.add_argument("--report")
     importer.add_argument("--sql-out")
     importer.add_argument("--backup")
+    importer.add_argument(
+        "--preflight", help="write a snapshot guard check for the generated patch"
+    )
     importer.add_argument("--apply", action="store_true")
     importer.set_defaults(func=cmd_import)
     translator = subparsers.add_parser(
@@ -889,6 +905,9 @@ def build_parser() -> argparse.ArgumentParser:
     translator.add_argument("--report")
     translator.add_argument("--sql-out")
     translator.add_argument("--backup")
+    translator.add_argument(
+        "--preflight", help="write a snapshot guard check for the generated patch"
+    )
     translator.add_argument("--apply", action="store_true")
     translator.set_defaults(func=cmd_translate, validation_retry=True)
     return parser

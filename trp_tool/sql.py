@@ -541,3 +541,74 @@ def write_rollback(
         (guarded_rollback_statement(table, record) for record in valid),
         ("TranslatePress guarded rollback", f"table: {table}"),
     )
+
+
+def write_preflight(
+    path: str | Path, table: str, records: Iterable[TranslationRecord]
+) -> None:
+    """Write a non-persistent snapshot check for every guarded patch row."""
+    validate_identifier(table)
+    valid = [
+        record
+        for record in records
+        if record.translation_status == "translated"
+        and record.validation_status == "passed"
+    ]
+    temp_table = "_trp_preflight_expected"
+    with Path(path).open("w", encoding="utf-8", newline="\n") as handle:
+        handle.write("-- TranslatePress guarded patch preflight\n")
+        handle.write(f"-- table: {table}\n")
+        handle.write(f"-- expected rows: {len(valid)}\n")
+        handle.write(
+            "-- Run in one database session immediately before importing the patch.\n"
+        )
+        handle.write(
+            "-- The detail query must return zero rows and stale_rows must be 0.\n\n"
+        )
+        handle.write("SET NAMES utf8mb4;\n\n")
+        handle.write(f"DROP TEMPORARY TABLE IF EXISTS `{temp_table}`;\n")
+        handle.write(
+            f"CREATE TEMPORARY TABLE `{temp_table}` (\n"
+            "  patch_item INT UNSIGNED NOT NULL,\n"
+            "  row_id BIGINT UNSIGNED NOT NULL,\n"
+            "  original LONGTEXT NOT NULL,\n"
+            "  translated LONGTEXT NULL,\n"
+            "  status INT NOT NULL,\n"
+            "  PRIMARY KEY (row_id)\n"
+            ") CHARACTER SET utf8mb4 COLLATE utf8mb4_bin;\n\n"
+        )
+        if valid:
+            handle.write(
+                f"INSERT INTO `{temp_table}` "
+                "(patch_item, row_id, original, translated, status) VALUES\n"
+            )
+            for index, record in enumerate(valid, start=1):
+                row = record.row
+                suffix = "," if index < len(valid) else ";"
+                handle.write(
+                    f"({index}, {row.id}, {sql_quote(row.original)}, "
+                    f"{sql_quote(row.translated)}, {row.status}){suffix}\n"
+                )
+        mismatch = (
+            "c.id IS NULL OR NOT (c.original <=> e.original) OR "
+            "NOT (c.translated <=> e.translated) OR NOT (c.status <=> e.status)"
+        )
+        handle.write(
+            "\nSELECT e.patch_item, e.row_id,\n"
+            "  CASE\n"
+            "    WHEN c.id IS NULL THEN 'missing_row'\n"
+            "    WHEN NOT (c.original <=> e.original) THEN 'source_changed'\n"
+            "    WHEN NOT (c.translated <=> e.translated) THEN 'translation_changed'\n"
+            "    WHEN NOT (c.status <=> e.status) THEN 'status_changed'\n"
+            "  END AS mismatch\n"
+            f"FROM `{temp_table}` e\n"
+            f"LEFT JOIN `{table}` c ON c.id = e.row_id\n"
+            f"WHERE {mismatch}\n"
+            "ORDER BY e.patch_item;\n\n"
+            "SELECT COUNT(*) AS expected_rows,\n"
+            f"  SUM(NOT ({mismatch})) AS matched_rows,\n"
+            f"  SUM({mismatch}) AS stale_rows\n"
+            f"FROM `{temp_table}` e\n"
+            f"LEFT JOIN `{table}` c ON c.id = e.row_id;\n\n"
+            f"DROP TEMPORARY TABLE `{temp_table}`;\n"
+        )

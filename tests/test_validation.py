@@ -72,6 +72,22 @@ class ValidationTests(unittest.TestCase):
         self.assertInvalid(source, "Hallo")
         self.assertEqual(eligibility_reason("%title", []), "protected_placeholder")
 
+    def test_ordinary_percentages_are_not_printf_placeholders(self):
+        for source, target in (
+            ("solves 80% of problems", "löst 80 % der Probleme"),
+            ("100% complete", "zu 100 % abgeschlossen"),
+            ("20% discount", "20 % Rabatt"),
+        ):
+            with self.subTest(source=source):
+                self.assertValid(source, target)
+
+    def test_printf_placeholders_still_require_exact_preservation(self):
+        for placeholder in ("%s", "%1$s", "%2$d", "% d", "%.2f", "%08x"):
+            with self.subTest(placeholder=placeholder):
+                self.assertValid(f"Value: {placeholder}", f"Wert: {placeholder}")
+                changed = "%d" if placeholder != "%d" else "%s"
+                self.assertInvalid(f"Value: {placeholder}", f"Wert: {changed}")
+
     def test_preserves_urls_emails_phone_paths_code_and_brands(self):
         source = "SureCookie on WordPress: https://example.com/a?b=1 support@example.com +49 30 123456 `/wp/a.php`"
         target = "SureCookie auf WordPress: https://example.com/a?b=1 support@example.com +49 30 123456 `/wp/a.php`"

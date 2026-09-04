@@ -53,10 +53,10 @@ verify() {
     # apply, rollback, failure, or interrupted run cannot influence the result.
     up
 
-    echo "1/4 unit tests"
+    echo "1/5 unit tests"
     "$PY" -m unittest discover -v
 
-    echo "2/4 dump parser matches live MySQL"
+    echo "2/5 dump parser matches live MySQL"
     "$PY" trp_translate.py export --dump "$DUMP" --table "$TABLE" --all --out "$WORK/dump.xlsx" >/dev/null
     "$PY" trp_translate.py export "${connection[@]}" --all --out "$WORK/live.xlsx" >/dev/null
     "$PY" - "$WORK/dump.xlsx" "$WORK/live.xlsx" <<'PY'
@@ -72,7 +72,7 @@ def load(path):
 assert load(sys.argv[1]) == load(sys.argv[2]), "dump and live reads differ"
 PY
 
-    echo "3/4 guarded direct apply and rollback"
+    echo "3/5 guarded direct apply and rollback"
     "$PY" - "$WORK/import.csv" <<'PY'
 import csv
 import sys
@@ -93,14 +93,23 @@ PY
     value=$(mysql_ -N -e "SELECT CONCAT(COALESCE(translated, 'NULL'), ':', status) FROM \`$TABLE\` WHERE id=1;")
     test "$value" = ":0"
 
-    echo "4/4 SQL escaping and stale snapshot guard"
-    mysql_ -e "UPDATE \`$TABLE\` SET translated='manual', status=2 WHERE id=1;" >/dev/null
+    echo "4/5 preflight accepts the snapshot and reports a stale row"
     "$PY" trp_translate.py import \
         --dump "$DUMP" \
         --table "$TABLE" \
         --excel "$WORK/import.csv" \
         --sql-out "$WORK/patch.sql" \
-        --backup "$WORK/patch-rollback.sql" >/dev/null
+        --backup "$WORK/patch-rollback.sql" \
+        --preflight "$WORK/preflight.sql" >/dev/null
+    mysql_ < "$WORK/preflight.sql" > "$WORK/preflight-fresh.txt"
+    grep -Eq $'1\t1\t0' "$WORK/preflight-fresh.txt"
+
+    mysql_ -e "UPDATE \`$TABLE\` SET translated='manual', status=2 WHERE id=1;" >/dev/null
+    mysql_ < "$WORK/preflight.sql" > "$WORK/preflight-stale.txt"
+    grep -q "translation_changed" "$WORK/preflight-stale.txt"
+    grep -Eq $'1\t0\t1' "$WORK/preflight-stale.txt"
+
+    echo "5/5 SQL escaping and stale snapshot guard"
     mysql_ < "$WORK/patch.sql" >/dev/null
     value=$(mysql_ -N -e "SELECT CONCAT(translated, ':', status) FROM \`$TABLE\` WHERE id=1;")
     test "$value" = "manual:2"

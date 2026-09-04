@@ -139,10 +139,13 @@ python trp_translate.py translate \
   --approve-full \
   --report review.xlsx \
   --sql-out patch.sql \
-  --backup rollback.sql
+  --backup rollback.sql \
+  --preflight preflight.sql
 ```
 
 Review `review.xlsx` before importing. Machine output is written with TranslatePress status `1`, never status `2`.
+
+Run `preflight.sql` in one database session immediately before importing the patch. It creates only a session-scoped temporary table, compares every patch row against the exact ID, source, previous translation, and status snapshot, reports any mismatch, and drops the temporary table. Continue only when the detail query returns no rows and the summary reports `stale_rows = 0` with `matched_rows` equal to `expected_rows`.
 
 ### 5. Import and verify
 
@@ -227,7 +230,8 @@ python trp_translate.py import \
   --excel translations.xlsx \
   --report import-review.xlsx \
   --sql-out import-patch.sql \
-  --backup import-rollback.sql
+  --backup import-rollback.sql \
+  --preflight import-preflight.sql
 ```
 
 Human spreadsheet imports default to status `2`. Use `--status 1` if the sheet contains unreviewed machine output. Existing translations are preserved unless `--overwrite-existing` is explicitly supplied.

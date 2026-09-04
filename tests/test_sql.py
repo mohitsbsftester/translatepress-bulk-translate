@@ -15,6 +15,7 @@ from trp_tool.sql import (
     split_sql_statements,
     sql_quote,
     write_patch,
+    write_preflight,
     write_rollback,
 )
 
@@ -125,6 +126,32 @@ class SQLTests(unittest.TestCase):
             text = patch.read_text(encoding="utf-8")
             self.assertIn("statements: 0", text)
             self.assertNotIn("\nUPDATE `", text)
+
+    def test_preflight_checks_exact_guards_without_persistent_table_writes(self):
+        row = DictRow(7, "It's <strong>safe</strong>", None, 0)
+        record = TranslationRecord(
+            row=row,
+            source_language="English",
+            target_language="German",
+            translated_text="Es ist <strong>sicher</strong>",
+            translation_status="translated",
+            validation_status="passed",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            preflight = Path(directory) / "preflight.sql"
+            write_preflight(preflight, TABLE, [record])
+            text = preflight.read_text(encoding="utf-8")
+            self.assertIn("expected rows: 1", text)
+            self.assertIn("(1, 7, 'It\\'s <strong>safe</strong>', NULL, 0)", text)
+            self.assertIn("source_changed", text)
+            self.assertIn("translation_changed", text)
+            self.assertIn("status_changed", text)
+            self.assertIn("stale_rows", text)
+            self.assertIn("CREATE TEMPORARY TABLE", text)
+            self.assertNotRegex(
+                text,
+                rf"(?im)^(?:UPDATE|DELETE|INSERT INTO `{TABLE}`|ALTER TABLE `{TABLE}`)",
+            )
 
 
 if __name__ == "__main__":
